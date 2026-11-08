@@ -10,6 +10,7 @@ from typing import Optional, Tuple
 from fce_bot.config import settings
 from fce_bot.core.models import TransportType
 from fce_bot.data.db import get_db, init_db, normalize_stop_name
+from fce_bot.data.city_resolver import enrich_stops_batch, resolve_stop_city
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def load_gtfs_from_zip(zip_bytes: bytes, db_path: Optional[Path] = None) -> Tupl
                 stop_transport_usage[sid].add(tt)
 
     # Read stops
-    stops_data = []
+    raw_stops_data = []
     with z.open("stops.txt") as f:
         reader = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8-sig"))
         for row in reader:
@@ -111,7 +112,10 @@ def load_gtfs_from_zip(zip_bytes: bytes, db_path: Optional[Path] = None) -> Tupl
             if not usages:
                 has_bus = 1
 
-            stops_data.append((sid, sname, norm, lat, lon, has_bus, has_train, has_metro))
+            raw_stops_data.append((sid, sname, norm, lat, lon, has_bus, has_train, has_metro))
+
+    # Subtask: enrich stops with their municipality (Comune / City)
+    stops_data = enrich_stops_batch(raw_stops_data, allow_network=True)
 
     # Atomic write to DB
     with get_db(db_path) as conn:
@@ -126,14 +130,41 @@ def load_gtfs_from_zip(zip_bytes: bytes, db_path: Optional[Path] = None) -> Tupl
         # Insert batch
         cur.executemany("INSERT INTO routes VALUES (?, ?, ?, ?, ?)", routes_data)
         cur.executemany("INSERT INTO trips VALUES (?, ?, ?, ?, ?, ?)", trips_data)
-        cur.executemany("INSERT INTO stops VALUES (?, ?, ?, ?, ?, ?, ?, ?)", stops_data)
+        cur.executemany(
+            "INSERT INTO stops (stop_id, stop_name, normalized_name, city, normalized_city, lat, lon, has_bus, has_train, has_metro) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            stops_data
+        )
         cur.executemany("INSERT INTO stop_times VALUES (?, ?, ?, ?, ?)", stop_times_data)
 
+    cities_found = len({row[3] for row in stops_data if row[3]})
     logger.info(
-        "Loaded GTFS successfully: %d stops, %d trips, %d stop_times",
-        len(stops_data), len(trips_data), len(stop_times_data)
+        "Loaded GTFS successfully: %d stops (%d cities), %d trips, %d stop_times",
+        len(stops_data), cities_found, len(trips_data), len(stop_times_data)
     )
     return len(stops_data), len(trips_data), len(stop_times_data)
+
+
+def enrich_existing_stops_cities(db_path: Optional[Path] = None, allow_network: bool = True) -> int:
+    """Subtask to backfill `city` and `normalized_city` on existing stops in SQLite."""
+    init_db(db_path)
+    updated = 0
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        rows = cur.execute("SELECT stop_id, stop_name, lat, lon FROM stops").fetchall()
+        updates = []
+        for r in rows:
+            city = resolve_stop_city(r["stop_name"], r["lat"] or 0.0, r["lon"] or 0.0, allow_network=allow_network)
+            norm_city = normalize_stop_name(city)
+            updates.append((city, norm_city, r["stop_id"]))
+        if updates:
+            cur.executemany(
+                "UPDATE stops SET city = ?, normalized_city = ? WHERE stop_id = ?",
+                updates
+            )
+            updated = len(updates)
+    logger.info("Enriched city metadata for %d stops", updated)
+    return updated
 
 
 def download_and_sync_gtfs(feed_url: Optional[str] = None, db_path: Optional[Path] = None) -> Tuple[int, int, int]:

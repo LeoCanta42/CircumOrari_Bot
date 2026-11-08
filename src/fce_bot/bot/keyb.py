@@ -211,15 +211,54 @@ def transport_select_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def stop_cities_keyboard(
+    available_stops: List[Stop],
+    is_departure: bool = True
+) -> InlineKeyboardMarkup:
+    """Keyboard grouping stops by municipality (Comune / City) for fast manual lookup."""
+    city_counts: dict[str, int] = {}
+    for s in available_stops:
+        if s.city:
+            city_counts[s.city] = city_counts.get(s.city, 0) + 1
+
+    cities = sorted(city_counts.keys())
+    cb_prefix = "city_dep:" if is_departure else "city_arr:"
+    alpha_cb = "alpha_dep" if is_departure else "alpha_arr"
+    all_cb = "all_dep" if is_departure else "all_arr"
+    back_cb = "wizard_start" if is_departure else "back_to_departure"
+
+    keyboard = []
+    row = []
+    for c in cities:
+        label = f"🏙 {c} ({city_counts[c]})"
+        row.append(InlineKeyboardButton(label[:30], callback_data=f"{cb_prefix}{c}"[:64]))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+
+    keyboard.append([
+        InlineKeyboardButton("🔤 Per Iniziale (A-Z)", callback_data=alpha_cb),
+        InlineKeyboardButton("🌐 Tutte le fermate", callback_data=all_cb),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("⬅️ Indietro", callback_data=back_cb)
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
 def stop_letters_keyboard(
     available_stops: List[Stop],
     is_departure: bool = True
 ) -> InlineKeyboardMarkup:
-    """Keyboard displaying available initial letters of stops, plus an option to show all."""
+    """Keyboard displaying available initial letters of stops, plus options to filter by city or show all."""
     letters = sorted(list(set(s.stop_name[0].upper() for s in available_stops if s.stop_name)))
     cb_prefix = "let_dep:" if is_departure else "let_arr:"
+    cities_cb = "cities_dep" if is_departure else "cities_arr"
     all_cb = "all_dep" if is_departure else "all_arr"
     back_cb = "wizard_start" if is_departure else "back_to_departure"
+    has_cities = any(s.city for s in available_stops)
 
     keyboard = []
     chunk_size = 5
@@ -230,9 +269,15 @@ def stop_letters_keyboard(
         ]
         keyboard.append(row)
 
-    keyboard.append([
-        InlineKeyboardButton("🌐 Tutte le fermate", callback_data=all_cb)
-    ])
+    if has_cities:
+        keyboard.append([
+            InlineKeyboardButton("🏙 Filtra per Comune", callback_data=cities_cb),
+            InlineKeyboardButton("🌐 Tutte le fermate", callback_data=all_cb),
+        ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton("🌐 Tutte le fermate", callback_data=all_cb)
+        ])
     keyboard.append([
         InlineKeyboardButton("⬅️ Indietro", callback_data=back_cb)
     ])
@@ -244,10 +289,13 @@ def stops_pagination_keyboard(
     page: int = 0,
     is_departure: bool = True,
     letter: Optional[str] = None,
-    page_size: int = 8
+    city: Optional[str] = None,
+    page_size: int = 20
 ) -> InlineKeyboardMarkup:
-    """Paginated inline keyboard for choosing departure/arrival stops."""
-    if letter:
+    """Paginated inline keyboard for choosing departure/arrival stops (20 stops per page + city/letter filters)."""
+    if city:
+        filtered_stops = [s for s in stops if s.city and s.city.upper() == city.upper()]
+    elif letter:
         filtered_stops = [s for s in stops if s.stop_name and s.stop_name.upper().startswith(letter.upper())]
     else:
         filtered_stops = stops
@@ -260,42 +308,52 @@ def stops_pagination_keyboard(
     page_stops = filtered_stops[start_idx : start_idx + page_size]
 
     cb_prefix = "dep_stop:" if is_departure else "arr_stop:"
-    let_param = letter if letter else "ALL"
-    nav_prefix = f"page_dep:{let_param}:" if is_departure else f"page_arr:{let_param}:"
+    if city:
+        scope_param = f"CITY_{city}"
+    elif letter:
+        scope_param = letter
+    else:
+        scope_param = "ALL"
+    nav_prefix = f"page_dep:{scope_param}:" if is_departure else f"page_arr:{scope_param}:"
 
     keyboard = []
-    # 2 buttons per row
+    # 2 buttons per row (up to 20 stops per page = 10 compact rows)
     row = []
     for s in page_stops:
-        display_name = s.stop_name[:24]
-        row.append(InlineKeyboardButton(display_name, callback_data=f"{cb_prefix}{s.stop_id}"))
+        btn_label = s.stop_name[:28] if city else s.display_name[:28]
+        row.append(InlineKeyboardButton(btn_label, callback_data=f"{cb_prefix}{s.stop_id}"))
         if len(row) == 2:
             keyboard.append(row)
             row = []
     if row:
         keyboard.append(row)
 
-    # Navigation buttons (only if > 1 page)
+    # Navigation buttons (with fast +/-5 page jumps when many pages exist)
     if total_pages > 1:
         nav_row = []
+        if total_pages > 4 and page >= 5:
+            nav_row.append(InlineKeyboardButton("⏪ -5", callback_data=f"{nav_prefix}{max(0, page - 5)}"[:64]))
         if page > 0:
-            nav_row.append(InlineKeyboardButton("⬅️ Prec", callback_data=f"{nav_prefix}{page - 1}"))
+            nav_row.append(InlineKeyboardButton("⬅️ Prec", callback_data=f"{nav_prefix}{page - 1}"[:64]))
         nav_row.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="noop"))
         if page < total_pages - 1:
-            nav_row.append(InlineKeyboardButton("Succ ➡️", callback_data=f"{nav_prefix}{page + 1}"))
+            nav_row.append(InlineKeyboardButton("Succ ➡️", callback_data=f"{nav_prefix}{page + 1}"[:64]))
+        if total_pages > 4 and page <= total_pages - 6:
+            nav_row.append(InlineKeyboardButton("+5 ⏩", callback_data=f"{nav_prefix}{min(total_pages - 1, page + 5)}"[:64]))
         keyboard.append(nav_row)
 
-    # Filter / Change letter button
+    # Filter / Change city or letter buttons
     alpha_cb = "alpha_dep" if is_departure else "alpha_arr"
+    cities_cb = "cities_dep" if is_departure else "cities_arr"
+    has_cities = any(s.city for s in stops)
     if len(stops) > 12:
-        if letter:
-            keyboard.append([
-                InlineKeyboardButton("🔤 Cambia Lettera", callback_data=alpha_cb)
-            ])
-        else:
-            keyboard.append([
-                InlineKeyboardButton("🔤 Filtra per Lettera", callback_data=alpha_cb)
-            ])
+        filter_row = []
+        if has_cities:
+            filter_row.append(InlineKeyboardButton("🏙 Per Comune", callback_data=cities_cb))
+        filter_row.append(
+            InlineKeyboardButton("🔤 Cambia Lettera" if letter else "🔤 Per Lettera", callback_data=alpha_cb)
+        )
+        keyboard.append(filter_row)
 
     # Back button
     keyboard.append([

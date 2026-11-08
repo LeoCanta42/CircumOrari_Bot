@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from fce_bot.config import settings
 from fce_bot.data.users_repo import UsersRepository
 from fce_bot.data.gtfs_loader import download_and_sync_gtfs
-from fce_bot.data.db import get_db
+from fce_bot.data.db import get_db, get_persistent_db, get_persistence_status
 from fce_bot.bot.keyb import (
     admin_panel_keyboard,
     admin_users_list_keyboard,
@@ -34,22 +34,33 @@ def is_admin(user_id: int) -> bool:
 def _format_stats_text() -> str:
     """Generate formatted system and database statistics message."""
     stats = users_repo.get_stats()
+    persistence = get_persistence_status()
     with get_db() as conn:
         cur = conn.cursor()
         stops_cnt = cur.execute("SELECT count(*) as cnt FROM stops").fetchone()["cnt"]
         trips_cnt = cur.execute("SELECT count(*) as cnt FROM trips").fetchone()["cnt"]
         routes_cnt = cur.execute("SELECT count(*) as cnt FROM routes").fetchone()["cnt"]
         times_cnt = cur.execute("SELECT count(*) as cnt FROM stop_times").fetchone()["cnt"]
-        news_cnt = cur.execute("SELECT count(*) as cnt FROM news_cache").fetchone()["cnt"]
+        try:
+            cities_cnt = cur.execute("SELECT count(DISTINCT city) as cnt FROM stops WHERE city != ''").fetchone()["cnt"]
+        except Exception:
+            cities_cnt = 0
+
+    try:
+        with get_persistent_db() as pconn:
+            news_cnt = pconn.cursor().execute("SELECT count(*) as cnt FROM news_cache").fetchone()["cnt"]
+    except Exception:
+        news_cnt = 0
 
     return (
         "📊 *Statistiche Sistema FCE Bot*\n\n"
+        f"💾 *Storage Utenti:* {persistence['label']}\n\n"
         f"👥 *Utenti Totali:* `{stats['total_users']}`\n"
         f"🔔 *Iscritti attivi:* `{stats['subscribed_users']}`\n"
         f"🤖 *Utenti con accesso AI:* `{stats['ai_allowed_users']}`\n"
         f"⚡ *Attivi ultimi 30gg:* `{stats['active_last_30_days']}`\n\n"
         "🗄 *Database GTFS:*\n"
-        f"• Fermate censite: `{stops_cnt}`\n"
+        f"• Fermate censite: `{stops_cnt}` (`{cities_cnt}` comuni)\n"
         f"• Linee/Percorsi: `{routes_cnt}`\n"
         f"• Corse giornaliere: `{trips_cnt}`\n"
         f"• Orari di passaggio: `{times_cnt}`\n"
@@ -120,8 +131,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         context.user_data.pop("admin_state", None)
 
     stats = users_repo.get_stats()
+    persistence = get_persistence_status()
     text = (
         "🛠 *Pannello di Controllo Amministratore*\n\n"
+        f"💾 Storage: {persistence['label']}\n"
         f"👥 Utenti registrati: `{stats['total_users']}` | "
         f"🔔 Iscritti: `{stats['subscribed_users']}` | "
         f"🤖 AI: `{stats['ai_allowed_users']}`\n\n"

@@ -7,6 +7,7 @@ from fce_bot.services.ai_service import ai_service
 from fce_bot.data.users_repo import UsersRepository
 from fce_bot.bot.keyb import main_menu_keyboard
 from fce_bot.bot.handlers.admin import is_admin, handle_admin_text_input
+from fce_bot.bot.handlers.timetable import handle_wizard_text_input
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()
@@ -48,6 +49,21 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         handled = await handle_admin_text_input(update, context)
         if handled:
             return
+
+    # If user is in the manual timetable wizard stop selection step, allow typing a stop/city name directly
+    if isinstance(user_data, dict) and user_data.get("wizard_input_step") in ("dep", "arr"):
+        t_low = text.lower()
+        looks_like_full_ai_sentence = (
+            len(text.split()) >= 5
+            and any(k in t_low for k in ("da ", "come ", "orari", "alle ", "arrivare", "qual "))
+            and users_repo.is_ai_allowed(chat.id)
+        )
+        if looks_like_full_ai_sentence:
+            user_data.pop("wizard_input_step", None)
+        else:
+            handled_wiz = await handle_wizard_text_input(update, context)
+            if handled_wiz:
+                return
 
     # Permission check: AI is restricted to admin and authorized users only
     if not users_repo.is_ai_allowed(chat.id):

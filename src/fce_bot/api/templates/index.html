@@ -471,6 +471,181 @@
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(158, 27, 27, 0.12);
         }
+        .text-input.has-clear {
+            padding-right: 38px;
+        }
+        .label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .city-filter-select {
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 3px 24px 3px 10px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            font-family: inherit;
+            color: var(--secondary);
+            background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23475569' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E") no-repeat right 7px center / 12px;
+            cursor: pointer;
+            max-width: 195px;
+            outline: none;
+            -webkit-appearance: none;
+            transition: border-color 0.2s, background-color 0.2s;
+        }
+        .city-filter-select:focus, .city-filter-select.active-city {
+            border-color: var(--primary);
+            background-color: #fff5f5;
+            color: var(--primary);
+        }
+        .input-clear-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: none;
+            background: #f1f5f9;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+        .input-clear-btn:hover {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+        .stop-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 5px);
+            left: 0;
+            right: 0;
+            z-index: 45;
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 14px 30px -6px rgba(15, 23, 42, 0.16);
+            max-height: 290px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .stop-dropdown.open {
+            display: block;
+        }
+        .stop-dropdown-meta {
+            position: sticky;
+            top: 0;
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border);
+            padding: 6px 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 2;
+        }
+        .stop-option {
+            padding: 9px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            transition: background 0.12s;
+        }
+        .stop-option:last-child {
+            border-bottom: none;
+        }
+        .stop-option:hover, .stop-option.city-all-option:hover {
+            background: #fef2f2;
+        }
+        .stop-option.city-all-option {
+            background: #fffbeb;
+            border-bottom: 1px solid #fde68a;
+        }
+        .stop-option-main {
+            min-width: 0;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .stop-option-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-main);
+            word-break: break-word;
+        }
+        .stop-city-badge {
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: #f1f5f9;
+            color: #475569;
+            white-space: nowrap;
+        }
+        .stop-modes {
+            font-size: 0.82rem;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .resolution-banner {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e3a8a;
+            border-radius: 8px;
+            padding: 9px 12px;
+            font-size: 0.84rem;
+            margin-bottom: 12px;
+            line-height: 1.45;
+        }
+        .stops-path-details {
+            margin-top: 9px;
+            padding-top: 7px;
+            border-top: 1px dashed var(--border);
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+        .stops-path-details summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--secondary);
+            user-select: none;
+            list-style: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .stops-path-details summary::-webkit-details-marker {
+            display: none;
+        }
+        .stops-path-details summary:hover {
+            color: var(--primary);
+        }
+        .stops-path-body {
+            margin-top: 6px;
+            padding: 8px 10px;
+            background: #f8fafc;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            color: #334155;
+        }
 
         .btn-swap {
             background: #f1f5f9;
@@ -894,10 +1069,17 @@
 
             <!-- Route Inputs -->
             <div class="route-row">
-                <div class="input-group">
-                    <label for="tripOrigin">📍 Stazione di Partenza</label>
+                <div class="input-group" id="originGroup">
+                    <div class="label-row">
+                        <label for="tripOrigin">📍 Stazione di Partenza</label>
+                        <select id="originCityFilter" class="city-filter-select" onchange="onCityFilterChange('origin')" title="Filtra le fermate di partenza per Comune">
+                            <option value="">🏙 Tutti i Comuni</option>
+                        </select>
+                    </div>
                     <div class="input-wrapper">
-                        <input type="text" id="tripOrigin" class="text-input" list="stationsDatalist" placeholder="Es. Catania, Paternò, Milo..." value="PATERNO'">
+                        <input type="text" id="tripOrigin" class="text-input has-clear" autocomplete="off" placeholder="Cerca fermata, comune o luogo..." value="PATERNO'" onfocus="openStopDropdown('origin')" oninput="filterStopDropdown('origin')">
+                        <button type="button" class="input-clear-btn" onclick="clearStationInput('origin')" title="Cancella e sfoglia tutte le fermate" aria-label="Cancella partenza">✕</button>
+                        <div id="originDropdown" class="stop-dropdown" role="listbox"></div>
                     </div>
                 </div>
 
@@ -905,10 +1087,17 @@
                     <button type="button" class="btn-swap" onclick="swapStations()" title="Inverti partenza e arrivo">⇄</button>
                 </div>
 
-                <div class="input-group">
-                    <label for="tripDest">🏁 Stazione di Arrivo</label>
+                <div class="input-group" id="destGroup">
+                    <div class="label-row">
+                        <label for="tripDest">🏁 Stazione di Arrivo</label>
+                        <select id="destCityFilter" class="city-filter-select" onchange="onCityFilterChange('dest')" title="Filtra le fermate di arrivo per Comune">
+                            <option value="">🏙 Tutti i Comuni</option>
+                        </select>
+                    </div>
                     <div class="input-wrapper">
-                        <input type="text" id="tripDest" class="text-input" list="stationsDatalist" placeholder="Es. Randazzo, Borgo, Adrano..." value="RANDAZZO">
+                        <input type="text" id="tripDest" class="text-input has-clear" autocomplete="off" placeholder="Cerca fermata, comune o luogo..." value="RANDAZZO" onfocus="openStopDropdown('dest')" oninput="filterStopDropdown('dest')">
+                        <button type="button" class="input-clear-btn" onclick="clearStationInput('dest')" title="Cancella e sfoglia tutte le fermate" aria-label="Cancella arrivo">✕</button>
+                        <div id="destDropdown" class="stop-dropdown" role="listbox"></div>
                     </div>
                 </div>
             </div>
@@ -1143,10 +1332,237 @@
         function swapStations() {
             const orig = document.getElementById('tripOrigin');
             const dest = document.getElementById('tripDest');
+            const origCity = document.getElementById('originCityFilter');
+            const destCity = document.getElementById('destCityFilter');
             const temp = orig.value;
             orig.value = dest.value;
             dest.value = temp;
+            if (origCity && destCity) {
+                const tempCity = origCity.value;
+                origCity.value = destCity.value;
+                destCity.value = tempCity;
+                origCity.classList.toggle('active-city', Boolean(origCity.value));
+                destCity.classList.toggle('active-city', Boolean(destCity.value));
+            }
+            closeAllStopDropdowns();
         }
+
+        // ==========================================
+        // City Filter & Rich Scrollable Stop Picker
+        // ==========================================
+        let allStopsCache = [];
+        let duplicateStopNames = new Set();
+        let lastSelectedValues = { origin: "PATERNO'", dest: 'RANDAZZO' };
+
+        function normalizeClientText(str) {
+            if (!str) return '';
+            return str
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toUpperCase()
+                .replace(/[^A-Z0-9]+/g, ' ')
+                .trim();
+        }
+
+        function getSideElements(side) {
+            const isOrigin = side === 'origin';
+            return {
+                input: document.getElementById(isOrigin ? 'tripOrigin' : 'tripDest'),
+                citySelect: document.getElementById(isOrigin ? 'originCityFilter' : 'destCityFilter'),
+                dropdown: document.getElementById(isOrigin ? 'originDropdown' : 'destDropdown')
+            };
+        }
+
+        function closeAllStopDropdowns() {
+            document.querySelectorAll('.stop-dropdown').forEach(d => d.classList.remove('open'));
+        }
+
+        function clearStationInput(side) {
+            const { input } = getSideElements(side);
+            if (!input) return;
+            input.value = '';
+            lastSelectedValues[side] = '';
+            input.focus();
+            renderStopDropdown(side, true);
+        }
+
+        function onCityFilterChange(side) {
+            const { input, citySelect } = getSideElements(side);
+            if (!citySelect) return;
+            citySelect.classList.toggle('active-city', Boolean(citySelect.value));
+            if (input) {
+                // Clear previous stop if it belongs to another city so user immediately browses the chosen Comune
+                input.value = '';
+                lastSelectedValues[side] = '';
+                input.focus();
+            }
+            renderStopDropdown(side, true);
+        }
+
+        function openStopDropdown(side) {
+            const otherSide = side === 'origin' ? 'dest' : 'origin';
+            const other = getSideElements(otherSide);
+            if (other.dropdown) other.dropdown.classList.remove('open');
+            // When opening an already-selected field, show full list so user doesn't have to clear first
+            const { input } = getSideElements(side);
+            const browseAll = Boolean(input && input.value && input.value === lastSelectedValues[side]);
+            renderStopDropdown(side, browseAll);
+        }
+
+        function filterStopDropdown(side) {
+            renderStopDropdown(side, false);
+        }
+
+        function selectStopOption(side, val) {
+            const { input, dropdown } = getSideElements(side);
+            if (input) {
+                input.value = val;
+                lastSelectedValues[side] = val;
+            }
+            if (dropdown) dropdown.classList.remove('open');
+        }
+
+        function renderStopDropdown(side, ignoreInputFilter) {
+            const { input, citySelect, dropdown } = getSideElements(side);
+            if (!input || !dropdown || !allStopsCache.length) return;
+
+            const selectedCity = citySelect ? citySelect.value : '';
+            const rawQuery = ignoreInputFilter ? '' : (input.value || '').trim();
+            const normQuery = normalizeClientText(rawQuery);
+            const queryTokens = normQuery ? normQuery.split(/\s+/).filter(Boolean) : [];
+
+            let filtered = allStopsCache;
+            if (selectedCity) {
+                filtered = filtered.filter(s => s.city === selectedCity);
+            }
+
+            if (queryTokens.length > 0) {
+                const scored = [];
+                filtered.forEach(s => {
+                    const hay = s._normFull;
+                    const nameNorm = s._normName;
+                    let matched = 0;
+                    queryTokens.forEach(qt => {
+                        if (hay.includes(qt)) {
+                            matched += 1;
+                        } else if (qt.length >= 4) {
+                            const words = hay.split(' ');
+                            if (words.some(w => w.length >= 4 && (w.startsWith(qt) || qt.startsWith(w)))) {
+                                matched += 0.85;
+                            }
+                        }
+                    });
+                    const ratio = matched / queryTokens.length;
+                    if (ratio >= 0.65) {
+                        let boost = ratio * 10;
+                        if (nameNorm === normQuery) boost += 20;
+                        else if (nameNorm.startsWith(normQuery)) boost += 10;
+                        else if (nameNorm.includes(normQuery)) boost += 5;
+                        scored.push({ stop: s, score: boost });
+                    }
+                });
+                scored.sort((a, b) => b.score - a.score || a.stop.name.localeCompare(b.stop.name));
+                filtered = scored.map(x => x.stop);
+            }
+
+            const totalMatches = filtered.length;
+            const visible = filtered.slice(0, 120);
+
+            let html = '';
+            const scopeLabel = selectedCity ? ('Comune di ' + escapeHtml(selectedCity)) : 'Tutti i Comuni';
+            html += '<div class="stop-dropdown-meta">';
+            html += '  <span>' + scopeLabel + '</span>';
+            html += '  <span>' + totalMatches + ' fermat' + (totalMatches === 1 ? 'a' : 'e') + '</span>';
+            html += '</div>';
+
+            if (selectedCity && !normQuery && totalMatches > 1) {
+                html += '<div class="stop-option city-all-option" data-value="' + escapeHtml(selectedCity) + '">';
+                html += '  <div class="stop-option-main">';
+                html += '    <span class="stop-option-name">🏙 Tutte le fermate di ' + escapeHtml(selectedCity) + '</span>';
+                html += '  </div>';
+                html += '  <span class="stop-city-badge">' + totalMatches + ' fermate</span>';
+                html += '</div>';
+            }
+
+            if (visible.length === 0) {
+                html += '<div style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">';
+                html += 'Nessuna fermata esatta in elenco — premi <b>Cerca Soluzioni</b> per cercare per nome simile o luogo vicino.';
+                html += '</div>';
+            } else {
+                visible.forEach(s => {
+                    const useDisplay = duplicateStopNames.has(s.name) && s.display_name ? s.display_name : s.name;
+                    const modes = (s.metro ? '🚇' : '') + (s.train ? '🚆' : '') + (s.bus ? '🚌' : '');
+                    html += '<div class="stop-option" data-value="' + escapeHtml(useDisplay) + '">';
+                    html += '  <div class="stop-option-main">';
+                    html += '    <span class="stop-option-name">' + escapeHtml(s.name) + '</span>';
+                    if (s.city) {
+                        html += '    <span class="stop-city-badge">' + escapeHtml(s.city) + '</span>';
+                    }
+                    html += '  </div>';
+                    html += '  <span class="stop-modes">' + modes + '</span>';
+                    html += '</div>';
+                });
+            }
+
+            dropdown.innerHTML = html;
+            dropdown.querySelectorAll('.stop-option').forEach(opt => {
+                opt.addEventListener('mousedown', (ev) => {
+                    ev.preventDefault();
+                    selectStopOption(side, opt.getAttribute('data-value') || '');
+                });
+            });
+            dropdown.classList.add('open');
+        }
+
+        function populateCitySelectors(stops) {
+            const counts = new Map();
+            stops.forEach(s => {
+                if (s.city) {
+                    counts.set(s.city, (counts.get(s.city) || 0) + 1);
+                }
+            });
+            const sortedCities = Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0], 'it'));
+
+            ['originCityFilter', 'destCityFilter'].forEach(selId => {
+                const sel = document.getElementById(selId);
+                if (!sel) return;
+                const prev = sel.value;
+                let opts = '<option value="">🏙 Tutti i Comuni (' + sortedCities.length + ')</option>';
+                sortedCities.forEach(([city, cnt]) => {
+                    opts += '<option value="' + escapeHtml(city) + '">' + escapeHtml(city) + ' (' + cnt + ')</option>';
+                });
+                sel.innerHTML = opts;
+                if (prev && counts.has(prev)) {
+                    sel.value = prev;
+                    sel.classList.add('active-city');
+                } else {
+                    sel.value = '';
+                    sel.classList.remove('active-city');
+                }
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            const origGrp = document.getElementById('originGroup');
+            const destGrp = document.getElementById('destGroup');
+            if (origGrp && !origGrp.contains(e.target)) {
+                const d = document.getElementById('originDropdown');
+                if (d) d.classList.remove('open');
+            }
+            if (destGrp && !destGrp.contains(e.target)) {
+                const d = document.getElementById('destDropdown');
+                if (d) d.classList.remove('open');
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAllStopDropdowns();
+            } else if (e.key === 'Enter' && (e.target.id === 'tripOrigin' || e.target.id === 'tripDest')) {
+                closeAllStopDropdowns();
+                searchTrip();
+            }
+        });
 
         // Fill AI question chip
         function fillAIQuestion(chip) {
@@ -1157,6 +1573,7 @@
 
         // Search Itineraries
         async function searchTrip() {
+            closeAllStopDropdowns();
             const origin = (document.getElementById('tripOrigin').value || '').trim();
             const dest = (document.getElementById('tripDest').value || '').trim();
             const time = (document.getElementById('tripTime').value || '08:00').trim();
@@ -1196,13 +1613,33 @@
                     return;
                 }
 
-                header.innerText = '✅ Trovate ' + data.count + ' soluzioni per ' + origin + ' ➔ ' + dest + ':';
+                const dispOrigin = data.resolved_origin || origin;
+                const dispDest = data.resolved_destination || dest;
+                header.innerText = '✅ Trovate ' + data.count + ' soluzioni per ' + dispOrigin + ' ➔ ' + dispDest + ':';
 
                 let html = '';
-                data.itineraries.forEach((it, idx) => {
+                const notes = [];
+                if (data.origin_match_kind === 'similar') {
+                    notes.push('📍 Partenza associata alla fermata più simile: <b>' + escapeHtml(dispOrigin) + '</b>');
+                } else if (data.origin_match_kind === 'nearest_place') {
+                    const distTxt = data.origin_distance_m ? ' (~' + data.origin_distance_m + ' m)' : '';
+                    notes.push('📍 Fermata più vicina a <i>' + escapeHtml(origin) + '</i>: <b>' + escapeHtml(dispOrigin) + '</b>' + distTxt);
+                }
+                if (data.destination_match_kind === 'similar') {
+                    notes.push('🏁 Arrivo associato alla fermata più simile: <b>' + escapeHtml(dispDest) + '</b>');
+                } else if (data.destination_match_kind === 'nearest_place') {
+                    const distTxt = data.destination_distance_m ? ' (~' + data.destination_distance_m + ' m)' : '';
+                    notes.push('🏁 Fermata più vicina a <i>' + escapeHtml(dest) + '</i>: <b>' + escapeHtml(dispDest) + '</b>' + distTxt);
+                }
+                if (notes.length > 0) {
+                    html += '<div class="resolution-banner">' + notes.join('<br>') + '</div>';
+                }
+
+                data.itineraries.forEach((it) => {
                     const firstSeg = it.segments[0] || {};
                     const isDirect = it.direct;
-                    const modeLabel = firstSeg.type === 'TRENO' ? '🚆 Treno FCE' : (firstSeg.type === 'METRO' ? '🚇 Metropolitana' : '🚌 Bus Autolinee');
+                    const routeTag = firstSeg.route ? ' (' + escapeHtml(firstSeg.route) + ')' : '';
+                    const modeLabel = firstSeg.type === 'TRENO' ? '🚆 Treno FCE' + routeTag : (firstSeg.type === 'METRO' ? '🚇 Metropolitana' : '🚌 Bus Autolinee' + routeTag);
                     const headsign = firstSeg.headsign ? 'Direzione: ' + escapeHtml(firstSeg.headsign) : '';
 
                     html += '<div class="itinerary-card">';
@@ -1224,9 +1661,34 @@
                     html += '  </div>';
 
                     if (!isDirect && it.segments.length > 1) {
-                        html += '  <div class="transfer-note">🔀 Soluzione con cambio alla stazione di ' + escapeHtml(it.segments[0].arrival_stop) + '</div>';
+                        const seg2 = it.segments[1];
+                        const seg2Label = seg2.type === 'TRENO' ? '🚆 Treno' : (seg2.type === 'METRO' ? '🚇 Metro' : '🚌 Bus ' + escapeHtml(seg2.route || ''));
+                        const sameHub = it.segments[0].arrival_stop === seg2.departure_stop;
+                        const hubText = sameHub
+                            ? escapeHtml(it.segments[0].arrival_stop)
+                            : escapeHtml(it.segments[0].arrival_stop) + ' ➔ ' + escapeHtml(seg2.departure_stop) + ' (a piedi)';
+                        html += '  <div class="transfer-note">🔀 Cambio: ' + hubText + ' &bull; poi ' + seg2Label + ' alle ' + escapeHtml(seg2.departure_time) + '</div>';
                     } else if (headsign) {
                         html += '  <div style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">' + headsign + '</div>';
+                    }
+
+                    // Collapsible stop-by-stop path trace
+                    const totalStops = (it.segments || []).reduce((acc, s) => acc + ((s.stops_path && s.stops_path.length > 2) ? s.stops_path.length : 0), 0);
+                    if (totalStops > 0) {
+                        const interCount = (it.segments || []).reduce((acc, s) => acc + (s.intermediate_stops || 0), 0);
+                        html += '  <details class="stops-path-details">';
+                        html += '    <summary>🧭 Mostra percorso (' + interCount + ' fermat' + (interCount === 1 ? 'a intermedia' : 'e intermedie') + ')</summary>';
+                        html += '    <div class="stops-path-body">';
+                        it.segments.forEach((seg, sIdx) => {
+                            if (seg.stops_path && seg.stops_path.length > 1) {
+                                if (it.segments.length > 1) {
+                                    html += '<div style="font-weight:700; margin-top:' + (sIdx > 0 ? '6px' : '0') + ';">Tratta ' + (sIdx + 1) + ' (' + escapeHtml(seg.route || seg.type) + '):</div>';
+                                }
+                                html += '<div>' + seg.stops_path.map(st => escapeHtml(st)).join(' &rarr; ') + '</div>';
+                            }
+                        });
+                        html += '    </div>';
+                        html += '  </details>';
                     }
 
                     html += '</div>';
@@ -1244,24 +1706,42 @@
             alert("L'assistente conversazionale AI è disabilitato da web ed è disponibile solo su Telegram (@fce_app_bot) per gli utenti abilitati dall'amministratore.");
         }
 
-        // Load station autocomplete list filtered by transport mode
+        // Load station list + city filters filtered by transport mode
         async function loadStations(mode = currentMode) {
             try {
                 const queryParam = (mode && mode !== 'QUALSIASI') ? '?type=' + encodeURIComponent(mode) + '&limit=600' : '?limit=600';
                 const res = await fetch('/api/stops' + queryParam);
                 if (!res.ok) return;
                 const stops = await res.json();
-                const datalist = document.getElementById('stationsDatalist');
-                const uniqueNames = new Set();
-                stops.forEach(s => uniqueNames.add(s.name));
 
-                let optionsHtml = '';
-                Array.from(uniqueNames).sort().forEach(name => {
-                    optionsHtml += '<option value="' + escapeHtml(name) + '"></option>';
+                const nameCounts = new Map();
+                stops.forEach(s => {
+                    nameCounts.set(s.name, (nameCounts.get(s.name) || 0) + 1);
                 });
-                datalist.innerHTML = optionsHtml;
+                duplicateStopNames = new Set(
+                    Array.from(nameCounts.entries()).filter(([, c]) => c > 1).map(([n]) => n)
+                );
+
+                allStopsCache = stops.map(s => ({
+                    ...s,
+                    _normName: normalizeClientText(s.name),
+                    _normFull: normalizeClientText((s.city || '') + ' ' + s.name + ' ' + (s.display_name || ''))
+                }));
+
+                populateCitySelectors(allStopsCache);
+
+                const datalist = document.getElementById('stationsDatalist');
+                if (datalist) {
+                    const uniqueNames = new Set();
+                    stops.forEach(s => uniqueNames.add(s.name));
+                    let optionsHtml = '';
+                    Array.from(uniqueNames).sort().forEach(name => {
+                        optionsHtml += '<option value="' + escapeHtml(name) + '"></option>';
+                    });
+                    datalist.innerHTML = optionsHtml;
+                }
             } catch (e) {
-                console.warn('Could not populate station datalist:', e);
+                console.warn('Could not populate station list:', e);
             }
         }
 

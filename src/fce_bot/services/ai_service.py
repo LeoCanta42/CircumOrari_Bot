@@ -1,46 +1,73 @@
-"""AI Assistant Service for natural language transit Q&A and trip planning."""
+"""AI Assistant Service for natural language transit Q&A, fuzzy stop matching, nearest-stop geocoding, and path tracing."""
 
+import json
 import logging
 import re
-from typing import Optional, Dict, Any, Tuple
+from typing import Any, List, Optional
+
 import requests
 
 from fce_bot.config import settings
-from fce_bot.core.models import AIQueryResponse, TransportType, FilterType
-from fce_bot.services.transit_service import transit_service
-from fce_bot.services.documents_service import documents_service
+from fce_bot.core.models import AIQueryResponse, FilterType, TransportType
+from fce_bot.data.city_resolver import geocode_place_in_etna_area
 from fce_bot.data.db import get_db, normalize_stop_name
+from fce_bot.services.documents_service import documents_service
+from fce_bot.services.transit_service import LocationResolution, transit_service
 
 logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """Sei l'assistente virtuale ufficiale della Ferrovia Circumetnea (FCE) e Metropolitana di Catania.
-Il tuo compito è aiutare i viaggiatori a pianificare i loro spostamenti, indicando gli orari corretti, le fermate di partenza e arrivo e le informazioni su biglietti e linee.
+Il tuo compito è aiutare i viaggiatori a pianificare i loro spostamenti, indicando gli orari corretti, le fermate di partenza e arrivo (anche quando il passeggero scrive un nome approssimativo, un indirizzo o un luogo di interesse), il percorso delle linee e le informazioni su biglietti e documenti.
 REGOLE FONDAMENTALI DI RISPOSTA:
 1. Rispondi sempre in lingua italiana, in modo cordiale, chiaro e naturale.
-2. NON usare link markdown grezzi come [titolo](url) e non inserire URL completi o sintassi con parentesi quadre/tonde.
-3. Se l'utente chiede informazioni su orari completi o documenti, dì semplicemente: "Puoi consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata in questa pagina o sul sito circumetnea.it".
-4. Per i biglietti, indica che si possono acquistare nelle stazioni, alle emettitrici automatiche della metropolitana, nelle rivendite autorizzate (tabaccherie/edicole) e online tramite l'app ufficiale FCE o DropTicket.
-5. Evita sintassi markdown complessa o asterischi multipli sparsi.
-6. Basa le indicazioni di viaggio esclusivamente sui dati ufficiali indicati nel contesto.
+2. NON usare link markdown grezzi come [titolo](url) e non inserire URL completi.
+3. Se la fermata indicata dall'utente aveva un nome simile ma non identico (es. "Catania Santa Sofia" -> "Parcheggio Santa Sofia"), segnala cortesemente quale fermata reale hai utilizzato.
+4. Se l'utente ha indicato un indirizzo o un luogo generico (es. Piazza Duomo, Via Etnea, Policlinico), indica chiaramente la fermata FCE più vicina e la relativa distanza indicativa a piedi, spiegando il percorso trovato.
+5. Quando utile o richiesto, indica anche le fermate intermedie attraversate dalla linea lungo il tragitto.
+6. Se l'utente chiede informazioni su orari completi o documenti, dì semplicemente: "Puoi consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata o sul sito circumetnea.it".
+7. Per i biglietti, indica che si possono acquistare nelle stazioni, alle emettitrici automatiche della metropolitana, nelle rivendite autorizzate (tabaccherie/edicole) e online tramite l'app ufficiale FCE o DropTicket.
+8. Evita sintassi markdown complessa o asterischi multipli sparsi. Basa orari e percorsi esclusivamente sui dati ufficiali forniti nel contesto.
 """
 
 
 class ExtractedEntities(tuple):
     """Backwards-compatible tuple representing extracted query components.
-    
+
     Can be unpacked as 4 items: (origin, destination, time, transport_type)
-    or accessed with properties .origin, .destination, .time, .transport_type, .filter_type.
+    or accessed with properties .origin, .destination, .time, .transport_type, .filter_type,
+    .line_to_trace, .place_for_nearest_stop.
     """
-    def __new__(cls, origin, destination, time_val, ttype, ftype=FilterType.DEPARTURE_AFTER):
+
+    def __new__(
+        cls,
+        origin,
+        destination,
+        time_val,
+        ttype,
+        ftype=FilterType.DEPARTURE_AFTER,
+        line_to_trace: Optional[str] = None,
+        place_for_nearest_stop: Optional[str] = None,
+    ):
         return super().__new__(cls, (origin, destination, time_val, ttype))
 
-    def __init__(self, origin, destination, time_val, ttype, ftype=FilterType.DEPARTURE_AFTER):
+    def __init__(
+        self,
+        origin,
+        destination,
+        time_val,
+        ttype,
+        ftype=FilterType.DEPARTURE_AFTER,
+        line_to_trace: Optional[str] = None,
+        place_for_nearest_stop: Optional[str] = None,
+    ):
         self.origin = origin
         self.destination = destination
         self.time = time_val
         self.transport_type = ttype
         self.filter_type = ftype
+        self.line_to_trace = line_to_trace
+        self.place_for_nearest_stop = place_for_nearest_stop
 
 
 class AIService:
@@ -64,36 +91,52 @@ class AIService:
         if not name:
             return None
         c = name.strip()
-        c = re.sub(r"^(?:stazione\s+di|fermata\s+di|stazione|fermata|comune\s+di|la\s+città\s+di)\s+", "", c, flags=re.I)
-        c = re.sub(r"\s+(?:per\s+le|entro\s+le|alle|verso\s+le|verso|ore|domani|oggi|dopo|prima).*$", "", c, flags=re.I)
+        c = re.sub(
+            r"^(?:la\s+stazione\s+di|stazione\s+di|la\s+fermata\s+di|fermata\s+di|stazione|fermata|il\s+comune\s+di|comune\s+di|la\s+città\s+di|vicino\s+a|nei\s+pressi\s+di)\s+",
+            "",
+            c,
+            flags=re.I,
+        )
+        c = re.sub(
+            r"\s+(?:per\s+le|entro\s+le|alle|verso\s+le|verso|ore|domani|oggi|stasera|stamattina|dopo|prima)(?:\s+.*)?$",
+            "",
+            c,
+            flags=re.I,
+        )
+        c = re.sub(r"\s+(?:in\s+treno|in\s+metro|in\s+metropolitana|in\s+bus|con\s+il\s+treno|con\s+la\s+metro|con\s+il\s+bus)$", "", c, flags=re.I)
         c = re.sub(r"[\?\.!,;:]+$", "", c)
         return c.strip() or None
 
     def _map_query_with_llm(self, text: str) -> dict:
-        """Generalized semantic mapper: calls Gemini to extract origin, destination, time, intent, and transport mode."""
+        """Generalized semantic mapper: calls Gemini to extract origin, destination, addresses, line tracing, and intent."""
         if not settings.GEMINI_API_KEY:
             return {}
         try:
-            import json
             api_key = settings.GEMINI_API_KEY
             model = settings.GEMINI_MODEL or "gemini-3.5-flash-lite"
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             prompt = (
-                f"Sei l'assistente semantico ufficiale della Ferrovia Circumetnea e Metropolitana di Catania.\n"
+                f"Sei l'analizzatore semantico della Ferrovia Circumetnea e Metropolitana di Catania.\n"
                 f"Analizza la richiesta dell'utente: \"{text}\"\n\n"
-                "Estrai le informazioni di viaggio in formato JSON con questa struttura esatta:\n"
+                "Estrai le informazioni in formato JSON con questa struttura esatta:\n"
                 "{\n"
-                "  \"origin\": \"comune o stazione di partenza (oppure null se assente o domanda generica)\",\n"
-                "  \"destination\": \"comune o stazione di arrivo (oppure null)\",\n"
+                "  \"origin\": \"stazione, comune, via/indirizzo o luogo di partenza (oppure null)\",\n"
+                "  \"destination\": \"stazione, comune, via/indirizzo o luogo di arrivo (oppure null)\",\n"
                 "  \"time\": \"orario specificato in formato HH:MM (es. 15:00) oppure null\",\n"
-                "  \"is_arrival_time\": true se l'orario indicato è l'orario desiderato di arrivo (es. 'arrivare per le 15', 'essere a ... entro le 15'), false se è orario di partenza,\n"
+                "  \"is_arrival_time\": true se l'orario è l'arrivo desiderato (es. 'arrivare per le 15', 'essere a ... entro le 15'), false altrimenti,\n"
                 "  \"transport\": \"QUALSIASI\" | \"TRENO\" | \"METRO\" | \"BUS\",\n"
-                "  \"is_general_info\": true se è una richiesta generale (es. acquisto biglietti, info pdf) senza itinerario specifico\n"
+                "  \"line_to_trace\": \"codice o nome linea se l'utente chiede quali fermate/percorso fa una linea (es. 'METRO', '23M', '5N', 'TRENO') oppure null\",\n"
+                "  \"place_for_nearest_stop\": \"luogo o indirizzo se l'utente chiede solo qual è la fermata più vicina a un posto senza un viaggio A->B, oppure null\",\n"
+                "  \"is_general_info\": true se è una richiesta generale (es. biglietti, pdf) senza luoghi o linee\n"
                 "}"
             )
             payload = {
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.0, "maxOutputTokens": 200, "responseMimeType": "application/json"}
+                "generationConfig": {
+                    "temperature": 0.0,
+                    "maxOutputTokens": 260,
+                    "responseMimeType": "application/json",
+                },
             }
             resp = requests.post(url, json=payload, timeout=8)
             if resp.status_code == 200:
@@ -110,29 +153,32 @@ class AIService:
         destination = None
         dep_time = None
         ttype = TransportType.QUALSIASI
+        line_to_trace = None
+        place_for_nearest = None
 
-        # 1. Detect transport type
         lower_text = text.lower()
         if "metro" in lower_text or "metropolitana" in lower_text:
             ttype = TransportType.METRO
         elif "treno" in lower_text or "littorina" in lower_text or "ferrovia" in lower_text:
             ttype = TransportType.TRENO
-        elif "bus" in lower_text or "autobus" in lower_text or "pullman" in lower_text or "navetta" in lower_text or "autolinee" in lower_text:
+        elif any(w in lower_text for w in ("bus", "autobus", "pullman", "navetta", "autolinee")):
             ttype = TransportType.BUS
 
-        # 2. Detect arrival vs departure intent
-        is_arrival = bool(re.search(
-            r"\b(?:arrivare|arrivo|arrivando|essere\s+(?:a|ad)|entro\s+le|per\s+le|prima\s+delle)\b",
-            text,
-            re.IGNORECASE
-        ))
+        # Detect arrival vs departure intent
+        is_arrival = bool(
+            re.search(
+                r"\b(?:arrivare|arrivo|arrivando|essere\s+(?:a|ad|in)|entro\s+le|per\s+le|prima\s+delle)\b",
+                text,
+                re.IGNORECASE,
+            )
+        )
         ftype = FilterType.ARRIVAL_BEFORE if is_arrival else FilterType.DEPARTURE_AFTER
 
-        # 3. Extract time
+        # Extract time
         time_match = re.search(
             r"\b(?:alle\s+|verso\s+le\s+|entro\s+le\s+|per\s+le\s+|prima\s+delle\s+|dopo\s+le\s+|intorno\s+alle\s+|ore\s+)?([0-1]?[0-9]|2[0-3])[:.]([0-5][0-9])\b",
             text,
-            re.IGNORECASE
+            re.IGNORECASE,
         )
         if time_match:
             h, m = time_match.group(1), time_match.group(2)
@@ -141,17 +187,38 @@ class AIService:
             hour_match = re.search(
                 r"\b(?:alle\s+|verso\s+le\s+|entro\s+le\s+|per\s+le\s+|prima\s+delle\s+|dopo\s+le\s+|intorno\s+alle\s+|ore\s+)([0-1]?[0-9]|2[0-3])\b",
                 text,
-                re.IGNORECASE
+                re.IGNORECASE,
             )
             if hour_match:
                 h = hour_match.group(1)
                 dep_time = f"{int(h):02d}:00"
 
-        # 4. Patterns
-        pat1 = re.search(
-            r"\bda\s+([\w\'\s]+?)\s+(?:a|ad|verso|per)\s+([\w\'\s]+?)(?:\s+(?:alle|verso|entro|per\s+le|prima\s+delle|dopo|ore|domani|oggi|in|con|che)|\?|\.|$)",
+        # Detect line path tracing query (e.g. "che percorso fa la linea 23M?", "quali fermate fa la metro?")
+        trace_match = re.search(
+            r"(?:percorso|fermate|stazioni|giro|tratta|itinerario)\s+(?:(?:che\s+)?(?:fa|segue|effettua|tocca|percorre)\s+)?(?:della\s+|del\s+|la\s+|il\s+)?(?:linea\s+|navetta\s+|bus\s+)?([A-Za-z0-9]{1,5}|metropolitana|metro|treno|treni|littorina)\b",
             text,
-            re.IGNORECASE
+            re.IGNORECASE,
+        )
+        if trace_match and not re.search(r"\bda\s+.+\s+(?:a|ad|per|verso)\s+", text, re.IGNORECASE):
+            line_to_trace = trace_match.group(1).strip()
+
+        # Detect nearest-stop query (e.g. "qual è la fermata più vicina a Piazza Duomo?")
+        near_match = re.search(
+            r"(?:fermata|stazione)\s+(?:fce\s+|metro\s+)?pi[uù]\s+vicin[ao]\s+(?:a|ad|al|allo|alla|in)\s+([^\?\.\!]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if near_match:
+            place_for_nearest = self._clean_entity(near_match.group(1))
+
+        # Origin / Destination patterns (supporting accents, numbers in street addresses, apostrophes)
+        loc_chars = r"[\w\'\’\s,\.àèéìòùÀÈÉÌÒÙ]+"
+        stop_kw = r"(?:\s+(?:alle|verso\s+le|verso|entro|per\s+le|prima\s+delle|dopo|ore|domani|oggi|stasera|in\s+treno|in\s+metro|in\s+bus|con\s+il|con\s+la|che)|\?|\.|!|$)"
+
+        pat1 = re.search(
+            rf"\b(?:da|dal|dalla|partendo\s+da)\s+({loc_chars}?)\s+(?:a|ad|al|allo|alla|in|verso|per|fino\s+a)\s+({loc_chars}?){stop_kw}",
+            text,
+            re.IGNORECASE,
         )
         if pat1:
             origin = self._clean_entity(pat1.group(1))
@@ -159,9 +226,9 @@ class AIService:
 
         if not origin or not destination:
             pat2 = re.search(
-                r"\b(?:per|ad|a|verso)\s+([\w\'\s]+?)\s+(?:da|partendo\s+da)\s+([\w\'\s]+?)(?:\s+(?:alle|verso|entro|per\s+le|prima\s+delle|dopo|ore|domani|oggi|in|con|che)|\?|\.|$)",
+                rf"\b(?:per|ad|a|al|alla|in|verso|arrivare\s+a|arrivare\s+in|essere\s+a|essere\s+in)\s+({loc_chars}?)\s+(?:da|dal|dalla|partendo\s+da)\s+({loc_chars}?){stop_kw}",
                 text,
-                re.IGNORECASE
+                re.IGNORECASE,
             )
             if pat2:
                 destination = self._clean_entity(pat2.group(1))
@@ -169,15 +236,16 @@ class AIService:
 
         if not origin or not destination:
             pat3 = re.search(
-                r"([\w\'\s]+?)\s*[-–>]\s*([\w\'\s]+?)(?:\s+(?:alle|verso|entro|per\s+le|prima\s+delle|dopo|ore|domani|oggi)|\?|\.|$)",
-                text
+                rf"^({loc_chars}?)\s*[-–>]\s*({loc_chars}?){stop_kw}",
+                text.strip(),
+                re.IGNORECASE,
             )
             if pat3:
                 origin = self._clean_entity(pat3.group(1))
                 destination = self._clean_entity(pat3.group(2))
 
         # Dictionary matching fallback
-        if not origin or not destination:
+        if not origin and not destination and not line_to_trace and not place_for_nearest:
             found_stops = []
             norm_text = normalize_stop_name(text)
             for sname, norm_sname in self._get_known_stops():
@@ -185,20 +253,21 @@ class AIService:
                     if sname not in found_stops:
                         found_stops.append(sname)
             if len(found_stops) >= 2:
-                if not origin:
-                    origin = found_stops[0]
-                if not destination:
-                    destination = found_stops[1]
+                origin = found_stops[0]
+                destination = found_stops[1]
 
-        return ExtractedEntities(origin, destination, dep_time, ttype, ftype)
+        return ExtractedEntities(
+            origin,
+            destination,
+            dep_time,
+            ttype,
+            ftype,
+            line_to_trace=line_to_trace,
+            place_for_nearest_stop=place_for_nearest,
+        )
 
     def extract_entities(self, text: str) -> ExtractedEntities:
-        """Extract origin, destination, time, transport type and filter type from freeform text.
-        
-        Generalizes entity extraction using an intermediate LLM semantic parser when available,
-        falling back to deterministic rule-based parsing if offline or unconfigured.
-        """
-        # 1. Primary generalized intermediate mapping via Gemini
+        """Extract origin, destination, time, transport mode, filter type, and path/proximity intents."""
         if settings.GEMINI_API_KEY:
             llm_data = self._map_query_with_llm(text)
             if llm_data:
@@ -209,128 +278,235 @@ class AIService:
                 ftype = FilterType.ARRIVAL_BEFORE if is_arr else FilterType.DEPARTURE_AFTER
                 raw_t = llm_data.get("transport") or "QUALSIASI"
                 ttype = TransportType.from_str(str(raw_t))
-                if orig or dest or llm_data.get("is_general_info"):
-                    return ExtractedEntities(orig, dest, time_val, ttype, ftype)
+                line_trace = llm_data.get("line_to_trace")
+                place_near = self._clean_entity(llm_data.get("place_for_nearest_stop"))
+                if orig or dest or line_trace or place_near or llm_data.get("is_general_info"):
+                    return ExtractedEntities(
+                        orig,
+                        dest,
+                        time_val,
+                        ttype,
+                        ftype,
+                        line_to_trace=line_trace,
+                        place_for_nearest_stop=place_near,
+                    )
 
-        # 2. Rule-based / dictionary fallback
         return self._extract_rule_based(text)
 
+    @staticmethod
+    def _describe_resolution(role_label: str, res: Optional[LocationResolution]) -> str:
+        """Build human-readable explanation when a stop was matched by similarity or address proximity."""
+        if not res or not res.stop_ids:
+            return ""
+        if res.match_kind == "similar":
+            return (
+                f"{role_label}: \"{res.raw_query}\" associata per somiglianza alla fermata ufficiale "
+                f"\"{res.resolved_label}\"."
+            )
+        if res.match_kind == "nearest_place":
+            stops_desc = ", ".join(
+                f"{s.display_name} (~{s.distance_meters} m)" if s.distance_meters is not None else s.display_name
+                for s in res.matched_stops[:3]
+            )
+            return (
+                f"{role_label}: per il luogo/indirizzo \"{res.resolved_label}\" le fermate FCE più vicine sono: "
+                f"{stops_desc}."
+            )
+        return ""
+
     def answer_query(self, user_question: str) -> AIQueryResponse:
-        """Process user natural language query and formulate response."""
+        """Process user natural language query with fuzzy stop matching, place geocoding, and path tracing."""
         entities = self.extract_entities(user_question)
         origin = entities.origin
         destination = entities.destination
         target_time = entities.time or "08:00"
         ttype = entities.transport_type
         ftype = entities.filter_type
+        line_to_trace = entities.line_to_trace
+        place_for_nearest = entities.place_for_nearest_stop
 
+        orig_res: Optional[LocationResolution] = None
+        dest_res: Optional[LocationResolution] = None
         itineraries = []
-        if origin and destination:
-            itineraries = transit_service.find_trips(
-                origin=origin,
-                destination=destination,
-                target_time=target_time,
-                transport_type=ttype,
-                filter_type=ftype,
-                limit=5
+        traced_lines: List[dict] = []
+        nearest_only_res: Optional[LocationResolution] = None
+
+        # 1. Handle nearest-stop-to-place inquiry (when no origin->dest trip was requested)
+        if place_for_nearest and not (origin and destination):
+            nearest_only_res = transit_service.resolve_location(
+                place_for_nearest, transport_type=ttype, allow_geocoding=True
             )
-            # If no trips found with ARRIVAL_BEFORE, attempt DEPARTURE_AFTER as fallback
-            if not itineraries and ftype == FilterType.ARRIVAL_BEFORE:
-                itineraries = transit_service.find_trips(
-                    origin=origin,
-                    destination=destination,
-                    target_time=target_time,
-                    transport_type=ttype,
-                    filter_type=FilterType.DEPARTURE_AFTER,
-                    limit=5
+            if nearest_only_res.place_coords:
+                traced_lines = transit_service.trace_line_stops(
+                    "METRO" if ttype == TransportType.METRO else (ttype.value if ttype != TransportType.QUALSIASI else "METRO"),
+                    near_coords=nearest_only_res.place_coords,
+                    limit_routes=2,
                 )
 
-        # Build context for LLM or rule-based answering
-        docs = documents_service.get_documents()
+        # 2. Handle route / line path tracing inquiry
+        if line_to_trace:
+            near_pt = None
+            if destination and not origin:
+                geo = geocode_place_in_etna_area(destination, allow_network=True)
+                if geo:
+                    near_pt = (geo[0], geo[1])
+            traced_lines = transit_service.trace_line_stops(line_to_trace, near_coords=near_pt, limit_routes=3)
 
-        # Try Gemini if API key configured
+        # 3. Handle Origin -> Destination trip planning (supporting exact, city, similar names, and addresses!)
+        if origin and destination:
+            orig_res = transit_service.resolve_location(origin, transport_type=ttype, allow_geocoding=True)
+            dest_res = transit_service.resolve_location(destination, transport_type=ttype, allow_geocoding=True)
+
+            # Multi-modal fallback: if strict mode (e.g. METRO) couldn't resolve a bus-served stop like Santa Sofia,
+            # automatically broaden to QUALSIASI so Metro+Bus combinations are discovered!
+            effective_ttype = ttype
+            if (not orig_res.stop_ids or not dest_res.stop_ids) and ttype != TransportType.QUALSIASI:
+                orig_any = transit_service.resolve_location(
+                    origin, transport_type=TransportType.QUALSIASI, allow_geocoding=True
+                )
+                dest_any = transit_service.resolve_location(
+                    destination, transport_type=TransportType.QUALSIASI, allow_geocoding=True
+                )
+                if orig_any.stop_ids and dest_any.stop_ids:
+                    orig_res = orig_any
+                    dest_res = dest_any
+                    effective_ttype = TransportType.QUALSIASI
+
+            if orig_res.stop_ids and dest_res.stop_ids:
+                itineraries = transit_service.find_trips_from_resolutions(
+                    origin_res=orig_res,
+                    dest_res=dest_res,
+                    target_time=target_time,
+                    transport_type=effective_ttype,
+                    filter_type=ftype,
+                    limit=5,
+                )
+                # Broaden to multi-modal QUALSIASI if single mode had no connecting route
+                if not itineraries and effective_ttype != TransportType.QUALSIASI:
+                    itineraries = transit_service.find_trips_from_resolutions(
+                        origin_res=orig_res,
+                        dest_res=dest_res,
+                        target_time=target_time,
+                        transport_type=TransportType.QUALSIASI,
+                        filter_type=ftype,
+                        limit=5,
+                    )
+                # Fallback from ARRIVAL_BEFORE to DEPARTURE_AFTER if nothing arrives before early hour
+                if not itineraries and ftype == FilterType.ARRIVAL_BEFORE:
+                    itineraries = transit_service.find_trips_from_resolutions(
+                        origin_res=orig_res,
+                        dest_res=dest_res,
+                        target_time=target_time,
+                        transport_type=effective_ttype,
+                        filter_type=FilterType.DEPARTURE_AFTER,
+                        limit=5,
+                    )
+
+        docs = documents_service.get_documents()
+        resolved_orig_name = (orig_res.resolved_label if orig_res and orig_res.resolved_label else origin)
+        resolved_dest_name = (dest_res.resolved_label if dest_res and dest_res.resolved_label else destination)
+
         if settings.GEMINI_API_KEY:
             try:
                 llm_answer = self._call_gemini(
                     question=user_question,
-                    origin=origin,
-                    destination=destination,
+                    origin=resolved_orig_name,
+                    destination=resolved_dest_name,
+                    orig_res=orig_res,
+                    dest_res=dest_res,
+                    nearest_only_res=nearest_only_res,
+                    traced_lines=traced_lines,
                     target_time=target_time,
                     filter_type=ftype,
                     itineraries=itineraries,
-                    docs=docs
+                    docs=docs,
                 )
                 if llm_answer:
                     return AIQueryResponse(
                         answer=llm_answer,
-                        origin=origin,
-                        destination=destination,
+                        origin=resolved_orig_name,
+                        destination=resolved_dest_name,
                         time=target_time,
                         itineraries_count=len(itineraries),
-                        itineraries=[
-                            {
-                                "departure": it.departure_time,
-                                "arrival": it.arrival_time,
-                                "from": it.departure_stop,
-                                "to": it.arrival_stop,
-                                "direct": it.is_direct
-                            }
-                            for it in itineraries
-                        ]
+                        itineraries=self._serialize_itineraries(itineraries),
                     )
             except Exception as e:
                 logger.error("Gemini call failed: %s, falling back to rule-based response", e)
 
-        # Fallback rule-based answering
         answer = self._generate_rule_based_answer(
             user_question=user_question,
-            origin=origin,
-            destination=destination,
+            origin=resolved_orig_name,
+            destination=resolved_dest_name,
+            orig_res=orig_res,
+            dest_res=dest_res,
+            nearest_only_res=nearest_only_res,
+            traced_lines=traced_lines,
             target_time=target_time,
             filter_type=ftype,
             itineraries=itineraries,
-            docs=docs
+            docs=docs,
         )
 
         return AIQueryResponse(
             answer=answer,
-            origin=origin,
-            destination=destination,
+            origin=resolved_orig_name,
+            destination=resolved_dest_name,
             time=target_time,
             itineraries_count=len(itineraries),
-            itineraries=[
-                {
-                    "departure": it.departure_time,
-                    "arrival": it.arrival_time,
-                    "from": it.departure_stop,
-                    "to": it.arrival_stop,
-                    "direct": it.is_direct
-                }
-                for it in itineraries
-            ]
+            itineraries=self._serialize_itineraries(itineraries),
         )
+
+    @staticmethod
+    def _serialize_itineraries(itineraries: list) -> List[dict]:
+        return [
+            {
+                "departure": it.departure_time,
+                "arrival": it.arrival_time,
+                "from": it.departure_stop,
+                "to": it.arrival_stop,
+                "direct": it.is_direct,
+                "segments": [s.to_dict() for s in it.segments],
+            }
+            for it in itineraries
+        ]
+
+    def _build_resolution_notes(
+        self,
+        orig_res: Optional[LocationResolution],
+        dest_res: Optional[LocationResolution],
+    ) -> List[str]:
+        notes = []
+        n1 = self._describe_resolution("Partenza", orig_res)
+        if n1:
+            notes.append(f"📍 {n1}")
+        n2 = self._describe_resolution("Destinazione", dest_res)
+        if n2:
+            notes.append(f"🏁 {n2}")
+        return notes
 
     def _generate_rule_based_answer(
         self,
         user_question: str,
         origin: Optional[str],
         destination: Optional[str],
+        orig_res: Optional[LocationResolution],
+        dest_res: Optional[LocationResolution],
+        nearest_only_res: Optional[LocationResolution],
+        traced_lines: List[dict],
         target_time: str,
         filter_type: FilterType,
         itineraries: list,
-        docs: Any
+        docs: Any,
     ) -> str:
         """Fallback response generator providing clean text without broken markdown."""
         q_low = user_question.lower()
 
-        # 1. Documents / PDF query
         if any(w in q_low for w in ["documenti", "pdf", "scarica", "tabella orari", "orario metro", "orario treni", "orario bus"]):
             return (
-                "Puoi consultare e scaricare gli orari aggiornati ufficiali di Metropolitana, Treni di superficie e Autolinee Bus direttamente nella sezione 'Orari Ufficiali in PDF' in fondo alla pagina.\n\n"
-                "Se desideri cercare una corsa specifica, puoi anche indicarmi la partenza, la destinazione e l'orario desiderato!"
+                "Puoi consultare e scaricare gli orari aggiornati ufficiali di Metropolitana, Treni di superficie e Autolinee Bus direttamente nella sezione dedicata o sul sito circumetnea.it.\n\n"
+                "Se desideri cercare una corsa specifica, indicami pure partenza, destinazione (anche un indirizzo o luogo!) e l'orario desiderato!"
             )
 
-        # 2. Tickets query
         if any(w in q_low for w in ["bigliett", "ticket", "abbonament", "compra", "acquist", "tariffe", "costo"]):
             return (
                 "I biglietti e gli abbonamenti della Ferrovia Circumetnea e della Metropolitana di Catania sono acquistabili:\n\n"
@@ -338,39 +514,79 @@ class AIService:
                 "• Alle emettitrici automatiche attive in tutte le stazioni della metropolitana.\n"
                 "• Tramite smartphone con l'app ufficiale FCE Catania o l'app DropTicket.\n"
                 "• A bordo per le corse dei bus extraurbani (ove previsto).\n\n"
-                "Puoi consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata in questa pagina."
+                "Puoi consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata."
             )
 
-        # 3. No route query
+        # Nearest stop to a place/address
+        if nearest_only_res and nearest_only_res.matched_stops:
+            lines = [
+                f"📍 Fermate FCE più vicine a {nearest_only_res.resolved_label or nearest_only_res.raw_query}:\n"
+            ]
+            for s in nearest_only_res.matched_stops[:5]:
+                modes = []
+                if s.has_metro:
+                    modes.append("Metro")
+                if s.has_train:
+                    modes.append("Treno")
+                if s.has_bus:
+                    modes.append("Bus")
+                dist_txt = f" — a circa {s.distance_meters} m" if s.distance_meters is not None else ""
+                lines.append(f"• {s.display_name} ({', '.join(modes)}){dist_txt}")
+            lines.append("\nScrivimi anche da dove vuoi partire e a che ora per calcolare subito il percorso completo!")
+            return "\n".join(lines)
+
+        # Line / route path tracing
+        if traced_lines and not (origin and destination):
+            lines = ["🗺 Percorso delle fermate rilevato:\n"]
+            for tl in traced_lines:
+                head = f" (Direzione {tl['headsign']})" if tl.get("headsign") else ""
+                lines.append(f"• Linea {tl['route_name']} - {tl['transport_type']}{head}:")
+                lines.append("  " + " -> ".join(tl["stops"]))
+                if tl.get("closest_stop_to_target"):
+                    cs = tl["closest_stop_to_target"]
+                    lines.append(f"  📍 Fermata più vicina al punto indicato: {cs['stop_name']} (~{cs['distance_meters']} m)")
+            return "\n".join(lines)
+
         if not origin or not destination:
             return (
                 "👋 Ciao! Sono l'assistente per la mobilità della Ferrovia Circumetnea e Metropolitana di Catania.\n\n"
-                "Puoi chiedermi orari e percorsi scrivendo ad esempio:\n"
-                "• Come vado da Catania a Bronte verso le 14:00?\n"
-                "• Orari dei treni da Randazzo a Paternò\n"
-                "• Metro da Monte Po a Stesicoro alle 09:30\n\n"
+                "Puoi chiedermi orari, fermate vicine a un indirizzo o il percorso delle linee, ad esempio:\n"
+                "• Come vado da Catania Santa Sofia a Stesicoro verso le 09:00?\n"
+                "• Come arrivo in Piazza Duomo Catania partendo da Paternò alle 08:30?\n"
+                "• Qual è la fermata più vicina al Policlinico di Catania?\n"
+                "• Quali fermate fa la metropolitana?\n\n"
                 "Dimmi pure: da dove vuoi partire e dove desideri arrivare?"
             )
 
-        # 4. Route not found
+        notes = self._build_resolution_notes(orig_res, dest_res)
+        notes_block = ("\n".join(notes) + "\n\n") if notes else ""
+
         if not itineraries:
-            desc = f"con arrivo entro le ore {target_time}" if filter_type == FilterType.ARRIVAL_BEFORE else f"a partire dalle ore {target_time}"
+            desc = (
+                f"con arrivo entro le ore {target_time}"
+                if filter_type == FilterType.ARRIVAL_BEFORE
+                else f"a partire dalle ore {target_time}"
+            )
             return (
-                f"Non ho trovato corse dirette o con cambio immediato da {origin} a {destination} {desc}.\n\n"
+                f"{notes_block}Non ho trovato corse dirette o con cambio ravvicinato da {origin} a {destination} {desc}.\n\n"
                 "Suggerimenti:\n"
-                "• Prova a modificare l'orario o verifica il nome esatto della fermata.\n"
-                "• Puoi consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata in questa pagina."
+                "• Prova a indicare una fascia oraria diversa (es. mattina o primo pomeriggio).\n"
+                "• Puoi consultare gli orari aggiornati ufficiali nella sezione dedicata."
             )
 
-        # 5. Itineraries found
-        desc = f"con arrivo entro le ore {target_time}" if filter_type == FilterType.ARRIVAL_BEFORE else f"a partire dalle ore {target_time}"
-        lines = [
-            f"Ho trovato {len(itineraries)} soluzioni da {origin} a {destination} {desc}:\n"
-        ]
+        desc = (
+            f"con arrivo entro le ore {target_time}"
+            if filter_type == FilterType.ARRIVAL_BEFORE
+            else f"a partire dalle ore {target_time}"
+        )
+        lines = []
+        if notes:
+            lines.extend(notes)
+            lines.append("")
+        lines.append(f"Ho trovato {len(itineraries)} soluzioni da {origin} a {destination} {desc}:\n")
         for idx, it in enumerate(itineraries[:4], 1):
-            lines.append(f"{idx}. {it.format_clean()}")
+            lines.append(f"{idx}. {it.format_clean(include_path=True)}")
 
-        lines.append("\nPuoi consultare e scaricare gli orari aggiornati ufficiali nella sezione 'Orari Ufficiali in PDF' in questa pagina.")
         return "\n".join(lines)
 
     def _call_gemini(
@@ -378,56 +594,85 @@ class AIService:
         question: str,
         origin: Optional[str],
         destination: Optional[str],
+        orig_res: Optional[LocationResolution],
+        dest_res: Optional[LocationResolution],
+        nearest_only_res: Optional[LocationResolution],
+        traced_lines: List[dict],
         target_time: str,
         filter_type: FilterType,
         itineraries: list,
-        docs: Any
+        docs: Any,
     ) -> Optional[str]:
-        """Call Google Gemini (gemini-3.5-flash-lite) API via standard REST endpoint."""
+        """Call Google Gemini API with full resolution, proximity, and route-path context."""
         api_key = settings.GEMINI_API_KEY
         if not api_key:
             return None
 
-        # Build clean schedule context without Telegram asterisks
-        schedule_ctx = ""
+        extra_ctx_parts: List[str] = []
+        res_notes = self._build_resolution_notes(orig_res, dest_res)
+        if res_notes:
+            extra_ctx_parts.append("CORRISPONDENZA FERMATE E VICINANZA LUOGHI:\n" + "\n".join(res_notes))
+
+        if nearest_only_res and nearest_only_res.matched_stops:
+            near_lines = [
+                f"- {s.display_name} (distanza ~{s.distance_meters} m)"
+                for s in nearest_only_res.matched_stops[:5]
+            ]
+            extra_ctx_parts.append(
+                f"FERMATE PIÙ VICINE A '{nearest_only_res.resolved_label or nearest_only_res.raw_query}':\n"
+                + "\n".join(near_lines)
+            )
+
+        if traced_lines:
+            tl_parts = []
+            for tl in traced_lines:
+                s_str = " -> ".join(tl["stops"])
+                line_info = f"Linea {tl['route_name']} ({tl['transport_type']}): {s_str}"
+                if tl.get("closest_stop_to_target"):
+                    cs = tl["closest_stop_to_target"]
+                    line_info += f" | Fermata più vicina al punto: {cs['stop_name']} (~{cs['distance_meters']} m)"
+                tl_parts.append(line_info)
+            extra_ctx_parts.append("TRACCIATO FERMATE LINEE:\n" + "\n".join(tl_parts))
+
         if itineraries:
-            schedule_ctx = "ORARI TROVATI DAL DATABASE GTFS:\n"
+            schedule_ctx = "ORARI E PERCORSI TROVATI DAL DATABASE GTFS:\n"
             for it in itineraries:
-                schedule_ctx += it.format_clean() + "\n"
+                schedule_ctx += it.format_clean(include_path=True) + "\n"
         else:
             schedule_ctx = "Nessuna corsa trovata dal database per i criteri specificati."
 
-        criteria_str = f"Arrivo richiesto entro le {target_time}" if filter_type == FilterType.ARRIVAL_BEFORE else f"Partenza richiesta a partire dalle ore {target_time}"
+        criteria_str = (
+            f"Arrivo richiesto entro le {target_time}"
+            if filter_type == FilterType.ARRIVAL_BEFORE
+            else f"Partenza richiesta a partire dalle ore {target_time}"
+        )
+        extra_ctx = ("\n\n".join(extra_ctx_parts) + "\n\n") if extra_ctx_parts else ""
 
         prompt = f"""Domanda del passeggero: "{question}"
 Origine individuata: {origin or 'Non specificata'}
 Destinazione individuata: {destination or 'Non specificata'}
 Criterio orario: {criteria_str}
 
-{schedule_ctx}
+{extra_ctx}{schedule_ctx}
 
 Linee guida per la risposta:
 - Rispondi in italiano con tono cordiale, chiaro e conciso.
-- NON inserire URL completi, link markdown grezzi come [testo](url), né sintassi con parentesi quadre/tonde.
-- Se opportuno, puoi ricordare che il passeggero può consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata in questa pagina.
-- Se l'utente chiede dove acquistare biglietti, spiega che sono acquistabili presso le stazioni, le rivendite autorizzate, le emettitrici automatiche della metro e online tramite app FCE o DropTicket.
+- Se una fermata è stata trovata per somiglianza (es. Parcheggio Santa Sofia) o come fermata più vicina a un indirizzo/luogo (indicando i metri approssimativi a piedi), spiegalo chiaramente all'utente.
+- Indica gli orari migliori e cita sinteticamente il percorso/cambio effettuato dalla linea.
+- NON inserire URL completi e NON usare link markdown grezzi come [testo](url).
 """
 
         model = settings.GEMINI_MODEL or "gemini-3.5-flash-lite"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         payload = {
-            "contents": [
-                {"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + prompt}]}
-            ],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 800}
+            "contents": [{"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + prompt}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 900},
         }
         resp = requests.post(url, json=payload, timeout=20)
         if resp.status_code == 200:
             data = resp.json()
             return data["candidates"][0]["content"]["parts"][0]["text"]
-        else:
-            logger.warning("Gemini API error (%d): %s", resp.status_code, resp.text[:200])
-
+        logger.warning("Gemini API error (%d): %s", resp.status_code, resp.text[:200])
         return None
 
 

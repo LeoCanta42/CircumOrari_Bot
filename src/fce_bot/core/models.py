@@ -43,18 +43,54 @@ class Stop:
     has_bus: bool = False
     has_train: bool = False
     has_metro: bool = False
+    city: str = ""
+    distance_meters: Optional[int] = None
+
+    @property
+    def display_name(self) -> str:
+        """Human-friendly stop label appending city when not already part of stop_name."""
+        if not self.city:
+            return self.stop_name
+        clean_name = (
+            self.stop_name.upper()
+            .replace("'", "")
+            .replace("’", "")
+            .replace("Ò", "O")
+            .replace("À", "A")
+            .replace("È", "E")
+            .replace("Ì", "I")
+            .replace("Ù", "U")
+        )
+        clean_city = (
+            self.city.upper()
+            .replace("'", "")
+            .replace("’", "")
+            .replace("Ò", "O")
+            .replace("À", "A")
+            .replace("È", "E")
+            .replace("Ì", "I")
+            .replace("Ù", "U")
+        )
+        if clean_city in clean_name:
+            return self.stop_name
+        return f"{self.stop_name} ({self.city})"
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "stop_id": self.stop_id,
             "stop_name": self.stop_name,
             "normalized_name": self.normalized_name,
+            "city": self.city,
+            "display_name": self.display_name,
             "lat": self.lat,
             "lon": self.lon,
             "has_bus": self.has_bus,
             "has_train": self.has_train,
             "has_metro": self.has_metro,
         }
+        if self.distance_meters is not None:
+            data["distance_meters"] = self.distance_meters
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "Stop":
@@ -67,6 +103,8 @@ class Stop:
             has_bus=data.get("has_bus", False),
             has_train=data.get("has_train", False),
             has_metro=data.get("has_metro", False),
+            city=data.get("city", ""),
+            distance_meters=data.get("distance_meters"),
         )
 
 
@@ -79,6 +117,13 @@ class TripSegment:
     departure_time: str   # HH:MM format
     arrival_stop: str
     arrival_time: str     # HH:MM format
+    stops_path: List[str] = field(default_factory=list)
+
+    @property
+    def intermediate_stops(self) -> List[str]:
+        if len(self.stops_path) > 2:
+            return self.stops_path[1:-1]
+        return []
 
     @property
     def duration_minutes(self) -> int:
@@ -98,7 +143,9 @@ class TripSegment:
             "departure_stop": self.departure_stop,
             "departure_time": self.departure_time,
             "arrival_stop": self.arrival_stop,
-            "arrival_time": self.arrival_time
+            "arrival_time": self.arrival_time,
+            "stops_path": list(self.stops_path),
+            "intermediate_stops": self.intermediate_stops,
         }
 
     @classmethod
@@ -110,7 +157,8 @@ class TripSegment:
             departure_stop=data["departure_stop"],
             departure_time=data["departure_time"],
             arrival_stop=data["arrival_stop"],
-            arrival_time=data["arrival_time"]
+            arrival_time=data["arrival_time"],
+            stops_path=list(data.get("stops_path", [])),
         )
 
 
@@ -183,7 +231,7 @@ class Itinerary:
             lines.append(f"⏱ *Durata totale stimata:* ~{self.duration_minutes} min\n")
             return "".join(lines)
 
-    def format_clean(self) -> str:
+    def format_clean(self, include_path: bool = False) -> str:
         """Render itinerary as clean plain text without Markdown asterisks or brackets."""
         icon_map = {
             TransportType.BUS: "🚌",
@@ -194,17 +242,31 @@ class Itinerary:
         if self.is_direct:
             seg = self.segments[0]
             icon = icon_map.get(seg.transport_type, "🚍")
-            headsign_part = f" (Direzione {seg.headsign})" if seg.headsign else ""
-            return (
-                f"{icon} {seg.transport_type.value}: partenza ore {seg.departure_time} da {seg.departure_stop}, "
-                f"arrivo ore {seg.arrival_time} a {seg.arrival_stop} (~{self.duration_minutes} min){headsign_part}"
+            route_lbl = f" linea {seg.route_name}" if seg.route_name and seg.route_name != seg.transport_type.value else ""
+            headsign_part = f" - Direzione {seg.headsign}" if seg.headsign else ""
+            base = (
+                f"{icon} {seg.transport_type.value}{route_lbl}: partenza ore {seg.departure_time} da {seg.departure_stop}, "
+                f"arrivo ore {seg.arrival_time} a {seg.arrival_stop} (~{self.duration_minutes} min{headsign_part})"
             )
+            if include_path and seg.stops_path and len(seg.stops_path) > 2:
+                base += f"\n   Percorso fermate ({len(seg.stops_path)}): {' -> '.join(seg.stops_path)}"
+            return base
         else:
             parts = []
-            for seg in self.segments:
+            path_notes = []
+            for idx, seg in enumerate(self.segments, 1):
                 icon = icon_map.get(seg.transport_type, "🚍")
-                parts.append(f"{icon} {seg.transport_type.value} ({seg.departure_stop} ore {seg.departure_time} -> {seg.arrival_stop} ore {seg.arrival_time})")
-            return f"🔀 Cambio: {' con '.join(parts)} (durata complessiva ~{self.duration_minutes} min)"
+                route_lbl = f" {seg.route_name}" if seg.route_name and seg.route_name != seg.transport_type.value else ""
+                parts.append(
+                    f"{icon} {seg.transport_type.value}{route_lbl} "
+                    f"(da {seg.departure_stop} ore {seg.departure_time} a {seg.arrival_stop} ore {seg.arrival_time})"
+                )
+                if include_path and seg.stops_path and len(seg.stops_path) > 1:
+                    path_notes.append(f"   Tratta {idx}: {' -> '.join(seg.stops_path)}")
+            base = f"🔀 Cambio: {' poi '.join(parts)} (durata complessiva ~{self.duration_minutes} min)"
+            if path_notes:
+                base += "\n" + "\n".join(path_notes)
+            return base
 
 
 class NewsItem(BaseModel):

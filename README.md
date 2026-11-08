@@ -149,7 +149,8 @@ Il progetto è nativamente predisposto per essere distribuito su **Vercel**.
 ### Come funziona su Vercel:
 1. **Webhook Telegram:** Invece del continuous polling (incompatibile con il serverless), Telegram invia ogni evento via HTTP POST a `/api/webhook`.
 2. **Vercel Cron:** La verifica delle notizie viene eseguita una volta al giorno (schedule `0 6 * * *`, conforme ai limiti degli account Vercel Hobby) invocando l'endpoint `/api/cron/news`.
-3. **Database SQLite GTFS:** Il file `fce_lines.db` viene impacchettato direttamente nel bundle serverless e letto a velocità nativa (<1ms).
+3. **Database SQLite GTFS (Sola Lettura):** Il file `fce_lines.db` (con tutte le fermate già arricchite per Comune) viene impacchettato direttamente nel bundle serverless e letto a velocità nativa (<1ms).
+4. **Persistenza Permanente Utenti & News (Neon / Vercel Postgres):** Poiché il filesystem `/tmp` di Vercel viene azzerato ad ogni riavvio dei container serverless, gli utenti registrati (`users`) e la cache notizie (`news_cache`) vengono salvati in modo permanente su **PostgreSQL** (`POSTGRES_URL` / `DATABASE_URL`), con fallback automatico a SQLite in locale/Docker.
 
 ### Passaggi per il Deploy:
 1. Installa la CLI di Vercel (oppure collega il repository su [vercel.com](https://vercel.com)):
@@ -157,13 +158,15 @@ Il progetto è nativamente predisposto per essere distribuito su **Vercel**.
    npm i -g vercel
    vercel
    ```
-2. Nelle impostazioni del progetto su Vercel (**Settings -> Environment Variables**), inserisci:
+2. Collega un database **Neon Postgres** gratuito in 1 click dalla dashboard Vercel (**Storage -> Create Database -> Neon Postgres**): Vercel inietterà automaticamente `POSTGRES_URL` / `DATABASE_URL` e le tabelle `users` e `news_cache` verranno create in automatico al primo avvio.
+3. Nelle impostazioni del progetto su Vercel (**Settings -> Environment Variables**), inserisci:
    * `TELEGRAM_BOT_TOKEN`: Il token del tuo bot Telegram.
+   * `ADMIN_USER_IDS`: Il tuo ID Telegram (es. `123456789`).
    * `WEBHOOK_URL`: `https://tuo-progetto.vercel.app/api/webhook`
    * `WEBHOOK_SECRET`: Una stringa casuale segreta a tua scelta.
    * `CRON_SECRET`: Una stringa segreta per proteggere l'endpoint Cron.
-   * `AI_API_KEY`: La tua chiave Google Gemini o OpenAI (opzionale).
-3. Configura il Webhook su Telegram effettuando una chiamata GET al bot:
+   * `GEMINI_API_KEY`: La tua chiave Google Gemini (opzionale).
+4. Configura il Webhook su Telegram effettuando una chiamata GET al bot:
    ```bash
    curl -F "url=https://tuo-progetto.vercel.app/api/webhook" \
         -F "secret_token=la_tua_chiave_webhook_secret" \

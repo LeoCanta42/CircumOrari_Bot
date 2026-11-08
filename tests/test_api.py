@@ -163,3 +163,44 @@ def test_admin_security_by_default():
     from fce_bot.bot.handlers.admin import is_admin
     # When admin_user_ids is empty, any random ID must be rejected
     assert is_admin(123456789) is False
+
+
+def test_api_cities_and_city_stop_filtering():
+    """Verify /api/cities and /api/stops?city=... endpoints."""
+    resp_cities = client.get("/api/cities")
+    assert resp_cities.status_code == 200
+    cities = resp_cities.json()
+    assert len(cities) >= 20
+    assert any(c["city"] == "Catania" and c["count"] > 20 for c in cities)
+
+    resp_stops = client.get("/api/stops?city=Belpasso&limit=100")
+    assert resp_stops.status_code == 200
+    stops = resp_stops.json()
+    assert len(stops) > 5
+    assert all(s["city"] == "Belpasso" for s in stops)
+    assert all("display_name" in s for s in stops)
+
+
+def test_api_timetable_similar_stop_and_traced_path():
+    """Verify /api/timetable resolves similar stop names and includes traced stops_path."""
+    resp = client.get("/api/timetable?origin=Catania%20Santa%20Sofia&destination=Stesicoro&time=09:00")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] > 0
+    assert data["origin_match_kind"] == "similar"
+    assert "Santa Sofia" in data["resolved_origin"]
+    first_seg = data["itineraries"][0]["segments"][0]
+    assert isinstance(first_seg["stops_path"], list)
+    assert len(first_seg["stops_path"]) >= 2
+
+
+def test_web_ui_city_filters_and_stop_picker_present():
+    """Verify HTML home dashboard exposes Comune filters and rich scrollable stop dropdowns."""
+    resp = client.get("/")
+    assert resp.status_code == 200
+    html = resp.text
+    assert 'id="originCityFilter"' in html
+    assert 'id="destCityFilter"' in html
+    assert 'id="originDropdown"' in html
+    assert 'id="destDropdown"' in html
+    assert "stops-path-details" in html

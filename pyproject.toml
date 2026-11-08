@@ -21,6 +21,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
+    "psycopg[binary]>=3.2.0",
 ]
 
 [project.optional-dependencies]
@@ -36,4 +37,4 @@ fce-bot = "fce_bot.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-fce_bot = ["api/templates/*.html"]
+fce_bot = ["api/templates/*.html", "data/*.json"]

@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 from fce_bot.config import settings
 from fce_bot.core.models import NewsItem
-from fce_bot.data.db import get_db
+from fce_bot.data.db import get_persistent_db as get_db
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +127,9 @@ class NewsService:
                 logger.info("Initializing news cache with current %d articles", len(fetched))
                 for item in fetched:
                     cur.execute("""
-                        INSERT OR IGNORE INTO news_cache (guid, title, link, pub_date)
+                        INSERT INTO news_cache (guid, title, link, pub_date)
                         VALUES (?, ?, ?, ?)
+                        ON CONFLICT(guid) DO NOTHING
                     """, (item.guid or item.link, item.title, item.link, item.published_date))
                 return []
 
@@ -139,6 +140,7 @@ class NewsService:
                     cur.execute("""
                         INSERT INTO news_cache (guid, title, link, pub_date)
                         VALUES (?, ?, ?, ?)
+                        ON CONFLICT(guid) DO NOTHING
                     """, (guid, item.title, item.link, item.published_date))
                     new_items.append(item)
 

@@ -72,3 +72,31 @@ def test_ai_arrival_query_varied_phrasing():
     assert resp.time == "15:00"
     assert resp.itineraries_count > 0
     assert any(hour in resp.answer for hour in ["14:", "14.5", "14.1", "14.2"])
+
+
+def test_ai_imprecise_stop_catania_santa_sofia(monkeypatch):
+    """Verify AI trip assistant resolves similar stop names like 'Catania Santa Sofia' -> 'Parcheggio Santa Sofia'."""
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    resp = ai_service.answer_query("Come posso andare da Catania Santa Sofia a Stesicoro alle 09:00?")
+    assert resp.itineraries_count > 0
+    assert "santa sofia" in (resp.origin or "").lower()
+    assert "santa sofia" in resp.answer.lower()
+    assert "stesicoro" in resp.answer.lower()
+
+
+def test_ai_landmark_nearest_stop_query(monkeypatch):
+    """Verify AI trip assistant resolves places/addresses to the nearest FCE stop and computes the route."""
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    resp = ai_service.answer_query("Come arrivo da Piazza Duomo Catania a Paternò alle 09:00?")
+    assert resp.itineraries_count > 0
+    assert "stesicoro" in resp.answer.lower()
+    assert any(w in resp.answer.lower() for w in ["vicin", "m)", "metri", "fermata"])
+
+
+def test_ai_line_path_tracing_query(monkeypatch):
+    """Verify AI trip assistant can trace the stops along a line."""
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    resp = ai_service.answer_query("Quali fermate fa la metropolitana di Catania?")
+    assert "monte po" in resp.answer.lower()
+    assert "borgo" in resp.answer.lower()
+    assert "stesicoro" in resp.answer.lower()

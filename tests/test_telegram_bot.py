@@ -618,5 +618,85 @@ async def test_admin_username_management_and_panel_flow():
         repo.delete_user(admin_id)
 
 
+def test_stop_cities_keyboard_and_20_per_page_pagination():
+    """Verify Telegram Comune filter keyboard and enlarged 20-stops-per-page pagination."""
+    from fce_bot.bot.keyb import stop_cities_keyboard
+
+    mock_stops = [
+        Stop(stop_id=str(i), stop_name=f"Fermata {i:02d}", normalized_name=f"FERMATA {i:02d}", city="Catania")
+        for i in range(1, 26)
+    ] + [
+        Stop(stop_id="99", stop_name="Piano Tavola", normalized_name="PIANO TAVOLA", city="Belpasso"),
+    ]
+
+    city_kb = stop_cities_keyboard(mock_stops, is_departure=True)
+    city_cbs = [btn.callback_data for row in city_kb.inline_keyboard for btn in row]
+    assert "city_dep:Catania" in city_cbs
+    assert "city_dep:Belpasso" in city_cbs
+    assert "alpha_dep" in city_cbs
+
+    # Filtering by Catania shows 20 stops on page 0 (instead of old 8), with next page button
+    page_kb = stops_pagination_keyboard(mock_stops, page=0, is_departure=True, city="Catania")
+    stop_btns = [
+        btn for row in page_kb.inline_keyboard for btn in row
+        if btn.callback_data and btn.callback_data.startswith("dep_stop:")
+    ]
+    assert len(stop_btns) == 20
+
+
+@pytest.mark.anyio
+async def test_wizard_city_filter_and_inline_text_search():
+    """Verify selecting stops by Comune and typing stop names directly in chat (even without AI access)."""
+    from fce_bot.bot.handlers.ai_chat import ai_message_handler
+
+    repo = UsersRepository()
+    non_ai_uid = 444333222
+    repo.delete_user(non_ai_uid)
+    assert repo.is_ai_allowed(non_ai_uid) is False
+
+    ctx = MagicMock()
+    ctx.user_data = {}
+    ctx.bot.send_chat_action = AsyncMock()
+
+    upd = MagicMock(spec=Update)
+    query = MagicMock(spec=CallbackQuery)
+    query.answer = AsyncMock()
+    query.edit_message_text = AsyncMock()
+    upd.callback_query = query
+
+    # 1. Select 'Tutti i Mezzi' -> opens Comune selection and activates wizard_input_step='dep'
+    query.data = "tt_any"
+    await wizard_callback(upd, ctx)
+    assert ctx.user_data.get("wizard_input_step") == "dep"
+    assert "Comune" in query.edit_message_text.call_args[0][0]
+
+    # 2. Select Comune 'Belpasso' -> shows Belpasso stops
+    query.data = "city_dep:Belpasso"
+    await wizard_callback(upd, ctx)
+    assert ctx.user_data.get("dep_city") == "Belpasso"
+    assert "Belpasso" in query.edit_message_text.call_args[0][0]
+
+    # 3. Non-AI user types 'Santa Sofia' directly in chat during wizard -> gets matching stop buttons!
+    text_upd = MagicMock(spec=Update)
+    text_upd.channel_post = None
+    chat = MagicMock()
+    chat.type = "private"
+    chat.id = non_ai_uid
+    text_upd.effective_chat = chat
+    msg = MagicMock()
+    msg.text = "Santa Sofia"
+    msg.reply_text = AsyncMock()
+    text_upd.effective_message = msg
+
+    await ai_message_handler(text_upd, ctx)
+    msg.reply_text.assert_awaited_once()
+    reply_txt = msg.reply_text.call_args[0][0]
+    assert "Fermate di PARTENZA trovate" in reply_txt
+    kb = msg.reply_text.call_args.kwargs["reply_markup"]
+    btn_labels = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any("Santa Sofia" in lbl for lbl in btn_labels)
+    repo.delete_user(non_ai_uid)
+
+
 
 

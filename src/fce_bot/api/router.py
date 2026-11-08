@@ -15,6 +15,7 @@ from fce_bot.services.documents_service import documents_service
 from fce_bot.services.ai_service import ai_service
 from fce_bot.bot.bot_app import create_bot_application
 from fce_bot.bot.handlers.news import check_and_broadcast_news
+from fce_bot.data.db import get_persistence_status
 from fce_bot.data.users_repo import UsersRepository
 
 logger = logging.getLogger(__name__)
@@ -88,22 +89,34 @@ async def cron_news_checker(
 # REST Transit & AI Endpoints
 # ==========================================
 
+@router.get("/api/cities")
+async def list_cities(type: Optional[str] = None):
+    """List municipalities (Comuni) served by FCE with stop counts."""
+    ttype = TransportType.from_str(type) if type else TransportType.QUALSIASI
+    return transit_service.get_cities(ttype)
+
+
 @router.get("/api/stops")
 async def list_stops(
     query: Optional[str] = None,
     type: Optional[str] = None,
+    city: Optional[str] = None,
     limit: int = 50
 ):
-    """Search or list transit stops."""
+    """Search or list transit stops (optionally filtered by transport mode and city)."""
     ttype = TransportType.from_str(type) if type else None
     if query:
-        stops = transit_service.search_stops(query, transport_type=ttype, limit=limit)
+        stops = transit_service.search_stops(query, transport_type=ttype, city=city, limit=limit)
     else:
-        stops = transit_service.get_stops_by_type(ttype or TransportType.QUALSIASI, limit=limit)
+        stops = transit_service.get_stops_by_type(
+            ttype or TransportType.QUALSIASI, city=city, limit=limit
+        )
     return [
         {
             "id": s.stop_id,
             "name": s.stop_name,
+            "city": s.city,
+            "display_name": s.display_name,
             "lat": s.lat,
             "lon": s.lon,
             "bus": s.has_bus,
@@ -123,12 +136,18 @@ async def get_timetable(
     filter: Optional[str] = "near_partenza2",
     limit: int = 10
 ):
-    """Query transit timetable between two stops."""
+    """Query transit timetable between two stops, cities, or similar station names."""
     ttype = TransportType.from_str(transport or "")
     ftype = FilterType(filter) if filter in [e.value for e in FilterType] else FilterType.DEPARTURE_AFTER
-    itineraries = transit_service.find_trips(
-        origin=origin,
-        destination=destination,
+    orig_res = transit_service.resolve_location(
+        origin, transport_type=ttype, allow_geocoding=True, allow_network_geocoding=False
+    )
+    dest_res = transit_service.resolve_location(
+        destination, transport_type=ttype, allow_geocoding=True, allow_network_geocoding=False
+    )
+    itineraries = transit_service.find_trips_from_resolutions(
+        origin_res=orig_res,
+        dest_res=dest_res,
         target_time=time,
         transport_type=ttype,
         filter_type=ftype,
@@ -137,6 +156,20 @@ async def get_timetable(
     return {
         "origin": origin,
         "destination": destination,
+        "resolved_origin": (
+            orig_res.matched_stops[0].display_name
+            if orig_res.match_kind == "nearest_place" and orig_res.matched_stops
+            else (orig_res.resolved_label or origin)
+        ),
+        "resolved_destination": (
+            dest_res.matched_stops[0].display_name
+            if dest_res.match_kind == "nearest_place" and dest_res.matched_stops
+            else (dest_res.resolved_label or destination)
+        ),
+        "origin_match_kind": orig_res.match_kind,
+        "destination_match_kind": dest_res.match_kind,
+        "origin_distance_m": orig_res.nearest_distance_m,
+        "destination_distance_m": dest_res.nearest_distance_m,
         "requested_time": time,
         "count": len(itineraries),
         "itineraries": [
@@ -156,7 +189,9 @@ async def get_timetable(
                         "departure_time": seg.departure_time,
                         "arrival_stop": seg.arrival_stop,
                         "arrival_time": seg.arrival_time,
-                        "duration_minutes": seg.duration_minutes
+                        "duration_minutes": seg.duration_minutes,
+                        "stops_path": seg.stops_path,
+                        "intermediate_stops": seg.intermediate_stops,
                     }
                     for seg in it.segments
                 ]
@@ -190,10 +225,13 @@ async def ai_trip_advisor(req: AIQueryRequest) -> AIQueryResponse:
 @router.get("/api/health")
 async def health_check():
     """Health check endpoint."""
+    p_status = get_persistence_status()
     return {
         "status": "healthy",
         "service": "fce-bot",
-        "version": "2.0.0"
+        "version": "2.0.0",
+        "storage_backend": p_status["backend"],
+        "permanent_storage": p_status["permanent"],
     }
 
 

@@ -4,7 +4,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from fce_bot.config import settings
-from fce_bot.data.db import get_db
+from fce_bot.data.db import get_persistent_db as get_db
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +84,8 @@ class UsersRepository:
         try:
             with get_db(self.db_path) as conn:
                 conn.execute("""
-                    INSERT INTO users (chat_id, username, first_name, last_active, is_subscribed)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1)
+                    INSERT INTO users (chat_id, username, first_name, last_active, is_subscribed, ai_allowed)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1, 0)
                     ON CONFLICT(chat_id) DO UPDATE SET
                         is_subscribed = 1,
                         username = coalesce(excluded.username, users.username),
@@ -187,10 +187,11 @@ class UsersRepository:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
                 cur.execute("""
-                    INSERT INTO users (chat_id, ai_allowed, is_subscribed)
-                    VALUES (?, ?, 0)
+                    INSERT INTO users (chat_id, ai_allowed, is_subscribed, last_active)
+                    VALUES (?, ?, 0, CURRENT_TIMESTAMP)
                     ON CONFLICT(chat_id) DO UPDATE SET
-                        ai_allowed = ?
+                        ai_allowed = ?,
+                        last_active = CURRENT_TIMESTAMP
                 """, (str(chat_id).strip(), 1 if allowed else 0, 1 if allowed else 0))
                 return True
         except Exception as e:
@@ -328,12 +329,15 @@ class UsersRepository:
             return {"total_users": 0, "subscribed_users": 0, "ai_allowed_users": 0, "active_last_30_days": 0}
 
     def prune_inactive(self, days: int = 60) -> int:
-        """Clean up old users not seen in N days (Data retention limit)."""
+        """Clean up old users not seen in N days while preserving subscribed and AI-whitelisted users."""
         try:
             cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
-                res = cur.execute("DELETE FROM users WHERE last_active < ?", (cutoff,))
+                res = cur.execute(
+                    "DELETE FROM users WHERE last_active < ? AND is_subscribed = 0 AND ai_allowed = 0",
+                    (cutoff,)
+                )
                 return res.rowcount
         except Exception as e:
             logger.warning("Error pruning inactive users: %s", e)

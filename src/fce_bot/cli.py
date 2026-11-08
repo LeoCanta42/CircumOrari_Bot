@@ -34,11 +34,18 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False) ->
 
 
 def sync_gtfs() -> None:
-    """Download and sync latest GTFS feed from circumetnea.it."""
+    """Download and sync latest GTFS feed from circumetnea.it (including stop municipality enrichment)."""
     from fce_bot.data.gtfs_loader import download_and_sync_gtfs
     logger.info("Synchronizing GTFS feed...")
     stops, trips, st = download_and_sync_gtfs()
     logger.info("GTFS sync completed: %d stops, %d trips, %d stop_times", stops, trips, st)
+
+
+def enrich_cities() -> None:
+    """Run municipality (Comune) enrichment subtask on existing GTFS stops."""
+    from fce_bot.data.gtfs_loader import enrich_existing_stops_cities
+    updated = enrich_existing_stops_cities()
+    logger.info("Municipality enrichment completed: %d stops enriched", updated)
 
 
 def check_news() -> None:
@@ -71,22 +78,26 @@ def run_news_worker(interval_seconds: int = 1800) -> None:
 def show_stats() -> None:
     """Print current system statistics."""
     from fce_bot.data.users_repo import UsersRepository
-    from fce_bot.data.db import get_db
+    from fce_bot.data.db import get_db, get_persistence_status
 
     repo = UsersRepository()
     stats = repo.get_stats()
+    p_status = get_persistence_status()
     with get_db() as conn:
         cur = conn.cursor()
         stops = cur.execute("SELECT count(*) FROM stops").fetchone()[0]
+        cities = cur.execute("SELECT count(DISTINCT city) FROM stops WHERE city != ''").fetchone()[0]
         trips = cur.execute("SELECT count(*) FROM trips").fetchone()[0]
         st = cur.execute("SELECT count(*) FROM stop_times").fetchone()[0]
         routes = cur.execute("SELECT count(*) FROM routes").fetchone()[0]
 
     print("=== FCE Bot System Statistics ===")
+    print(f"Storage Backend:    {p_status['label']}")
     print(f"Users Total:        {stats['total_users']}")
     print(f"Subscribed Users:   {stats['subscribed_users']}")
     print(f"Active (30d):       {stats['active_last_30_days']}")
     print(f"GTFS Routes:        {routes}")
+    print(f"GTFS Municipalities:{cities:>5}")
     print(f"GTFS Stops:         {stops}")
     print(f"GTFS Trips:         {trips}")
     print(f"GTFS Stop Times:    {st}")
@@ -103,6 +114,7 @@ def main() -> None:
     web_p.add_argument("--reload", action="store_true", help="Enable auto-reload")
 
     subparsers.add_parser("sync-gtfs", help="Download and parse official GTFS feed")
+    subparsers.add_parser("enrich-cities", help="Enrich GTFS stops with their municipality (Comune)")
     subparsers.add_parser("check-news", help="Check for new articles and broadcast")
     worker_p = subparsers.add_parser("news-worker", help="Run news polling loop daemon")
     worker_p.add_argument("--interval", type=int, default=1800, help="Check interval in seconds")
@@ -116,6 +128,8 @@ def main() -> None:
         run_server(host=args.host, port=args.port, reload=args.reload)
     elif args.command == "sync-gtfs":
         sync_gtfs()
+    elif args.command == "enrich-cities":
+        enrich_cities()
     elif args.command == "check-news":
         check_news()
     elif args.command == "news-worker":
