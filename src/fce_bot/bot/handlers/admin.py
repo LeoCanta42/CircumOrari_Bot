@@ -563,20 +563,6 @@ async def _format_ai_settings_text(admin_id: int | str | None = None, bot=None) 
         except Exception as e:
             logger.debug("Could not fetch bot star balance: %s", e)
 
-    test_mode_str = ""
-    if admin_id is not None:
-        is_test = settings_repo.get_admin_ai_test_mode(admin_id)
-        if is_test:
-            test_mode_str = (
-                "\n🧪 *Tuo Account Admin:* `🔴 AI Disabilitata (Modalità Test Acquisto)`\n"
-                "_Il bypass VIP è sospeso. Puoi testare la prova gratuita o acquistare a 1 Stella come utente normale._\n"
-            )
-        else:
-            test_mode_str = (
-                "\n👑 *Tuo Account Admin:* `🟢 AI Abilitata (Accesso VIP Illimitato)`\n"
-                "_Puoi disabilitare temporaneamente l'AI per testare l'acquisto a 1 Stella._\n"
-            )
-
     return (
         "⚙️ *Configurazione Abbonamenti AI & Pagamenti*\n\n"
         f"💵 *Prezzo Abbonamento:* {price_label} (mese da {cfg['sub_days']} giorni)\n"
@@ -584,12 +570,11 @@ async def _format_ai_settings_text(admin_id: int | str | None = None, bot=None) 
         f"🎁 *Prova Gratuita:* {trial_str} (`{cfg['trial_days']}` giorni, 1 sola volta per utente)\n"
         f"💱 *Valuta Attiva:* `{cfg['currency']}`\n"
         f"🔑 *Provider Telegram:* {token_status} (`{cfg['provider_type']}`)\n"
-        f"{stars_balance_str}"
-        f"{test_mode_str}\n"
+        f"{stars_balance_str}\n"
         "💡 *Regole del servizio:*\n"
         "• Il mese è calcolato in giorni solari continui dal momento del pagamento.\n"
         "• Alla scadenza, gli account vengono disattivati automaticamente.\n"
-        "• Le Stars incassate possono essere prelevate in Toncoin (TON) su Fragment.com.\n\n"
+        "• Nessun dato sensibile di pagamento viene conservato nel bot (GDPR Minimization).\n\n"
         "Tocca i pulsanti sottostanti per personalizzare i parametri:"
     )
 

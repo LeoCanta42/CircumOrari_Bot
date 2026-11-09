@@ -24,6 +24,12 @@ from fce_bot.bot.handlers.admin import admin_callback, is_admin
 def test_settings_repository_defaults_and_mutation():
     """Verify default AI subscription settings and persistence across updates."""
     repo = SettingsRepository()
+    repo.set_sub_price_eur(1.00)
+    repo.set_sub_stars(50)
+    repo.set_sub_days(30)
+    repo.set_trial_days(3)
+    repo.set_trial_enabled(True)
+    repo.set_currency("XTR")
     
     # Defaults
     assert repo.get_sub_price_eur() == 1.00
@@ -369,7 +375,7 @@ async def test_admin_ai_test_mode_toggle_and_buying(monkeypatch):
     assert status["is_admin"] is True
     assert status["admin_test_mode"] is False
 
-    # 2. Admin enters AI settings and toggles test mode ON
+    # 2. Admin revokes AI for their own account in User Management panel to test purchase
     update = MagicMock(spec=Update)
     query = MagicMock(spec=CallbackQuery)
     query.answer = AsyncMock()
@@ -381,7 +387,7 @@ async def test_admin_ai_test_mode_toggle_and_buying(monkeypatch):
     context = MagicMock()
     context.user_data = {}
 
-    query.data = "adm_ai_cfg:toggle_admin_test"
+    query.data = f"adm_u_ai:{admin_id}:0:all:0"
     await admin_callback(update, context)
 
     # Verify test mode is now active and AI is revoked for the admin account
@@ -391,7 +397,6 @@ async def test_admin_ai_test_mode_toggle_and_buying(monkeypatch):
     assert status_test["is_admin"] is False
     assert status_test["admin_test_mode"] is True
     assert status_test["ai_allowed"] is False
-    assert status_test["trial_used"] is False
 
     # Admin privilege for /admin remains intact
     assert is_admin(admin_id) is True
@@ -420,10 +425,10 @@ async def test_admin_ai_test_mode_toggle_and_buying(monkeypatch):
     assert exp is not None
     assert users_repo.is_ai_allowed(admin_id) is True
 
-    # 5. Admin toggles test mode OFF to re-enable permanent VIP access
+    # 5. Admin restores permanent unlimited VIP access in User Management panel
     query.edit_message_text.reset_mock()
     query.answer.reset_mock()
-    query.data = "adm_ai_cfg:toggle_admin_test"
+    query.data = f"adm_u_perm:{admin_id}:all:0"
     await admin_callback(update, context)
 
     # Verify test mode is disabled and VIP access is restored

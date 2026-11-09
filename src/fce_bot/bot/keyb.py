@@ -208,12 +208,6 @@ def admin_ai_settings_keyboard(
             InlineKeyboardButton("2.00€", callback_data="adm_ai_cfg:price:2.00"),
         ]
 
-    test_btn_label = (
-        "👑 Riabilita AI per Me (Torna VIP)"
-        if admin_test_mode
-        else "🧪 Disabilita AI per Me (Test Acquisto)"
-    )
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(trial_toggle_label, callback_data="adm_ai_cfg:toggle_trial"),
@@ -233,12 +227,6 @@ def admin_ai_settings_keyboard(
         price_row,
         [
             InlineKeyboardButton(curr_label, callback_data="adm_ai_cfg:toggle_currency"),
-        ],
-        [
-            InlineKeyboardButton(test_btn_label, callback_data="adm_ai_cfg:toggle_admin_test"),
-        ],
-        [
-            InlineKeyboardButton("🌐 Preleva Stars su Fragment.com", url="https://fragment.com"),
         ],
         [
             InlineKeyboardButton("🧹 Disattiva Utenti Scaduti Adesso", callback_data="adm_ai_cfg:clean_expired"),
