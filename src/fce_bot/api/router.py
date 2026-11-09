@@ -78,10 +78,35 @@ async def cron_news_checker(
         await app.initialize()
 
     sent_count = await check_and_broadcast_news(app.bot)
+    repo = UsersRepository()
+    deactivated = repo.deactivate_expired_users()
     return {
         "status": "ok",
         "broadcast_sent": sent_count,
-        "message": f"Broadcasted {sent_count} new announcements"
+        "deactivated_expired_ai": deactivated,
+        "message": f"Broadcasted {sent_count} new announcements and checked expired subscriptions"
+    }
+
+
+@router.get("/api/cron/cleanup")
+@router.get("/cron/cleanup")
+async def cron_cleanup_task(
+    authorization: Optional[str] = Header(None),
+    secret: Optional[str] = Query(None)
+):
+    """Scheduled maintenance task: deactivate expired AI users and prune inactive records (GDPR)."""
+    if settings.CRON_SECRET:
+        token = (authorization or "").replace("Bearer ", "") or secret
+        if token != settings.CRON_SECRET:
+            raise HTTPException(status_code=403, detail="Invalid cron authorization secret")
+
+    repo = UsersRepository()
+    deactivated = repo.deactivate_expired_users()
+    pruned = repo.prune_inactive(days=60)
+    return {
+        "status": "ok",
+        "deactivated_expired_ai": deactivated,
+        "pruned_inactive_users": pruned,
     }
 
 

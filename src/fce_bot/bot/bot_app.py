@@ -9,6 +9,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     TypeHandler,
+    PreCheckoutQueryHandler,
     ContextTypes,
     filters,
 )
@@ -37,6 +38,14 @@ from fce_bot.bot.handlers.news import (
 )
 from fce_bot.bot.handlers.documents import documents_command, documents_callback
 from fce_bot.bot.handlers.ai_chat import ai_message_handler, ai_help_callback
+from fce_bot.bot.handlers.payments import (
+    ai_subscribe_callback,
+    ai_trial_activate_callback,
+    ai_sub_info_callback,
+    pre_checkout_handler,
+    successful_payment_handler,
+    abbonamento_command,
+)
 from fce_bot.bot.handlers.admin import (
     admin_command,
     admin_callback,
@@ -92,6 +101,7 @@ PUBLIC_BOT_COMMANDS = [
     BotCommand("news", "Ultime notizie e avvisi di servizio"),
     BotCommand("iscriviti", "Ricevi notifiche su scioperi e variazioni"),
     BotCommand("disiscriviti", "Disattiva la ricezione delle notifiche"),
+    BotCommand("abbonamento", "Attiva o rinnova l'abbonamento all'Assistente AI"),
     BotCommand("documenti", "Scarica le tabelle orarie PDF ufficiali"),
     BotCommand("help", "Guida dettagliata all'uso del bot"),
     BotCommand("privacy", "Informativa GDPR e privacy"),
@@ -140,6 +150,7 @@ def create_bot_application() -> Application:
     # Commands - strictly restricted to direct private 1-to-1 chats
     app.add_handler(CommandHandler("start", start_command, filters=private_chat))
     app.add_handler(CommandHandler("help", help_command, filters=private_chat))
+    app.add_handler(CommandHandler("abbonamento", abbonamento_command, filters=private_chat))
     app.add_handler(CommandHandler("viaggio", viaggio_command, filters=private_chat))
     app.add_handler(CommandHandler("fermate", fermate_command, filters=private_chat))
     app.add_handler(CommandHandler("news", news_command, filters=private_chat))
@@ -171,6 +182,9 @@ def create_bot_application() -> Application:
     app.add_handler(CallbackQueryHandler(start_command, pattern="^menu_main$"))
     app.add_handler(CallbackQueryHandler(help_command, pattern="^help_info$"))
     app.add_handler(CallbackQueryHandler(ai_help_callback, pattern="^ai_help$"))
+    app.add_handler(CallbackQueryHandler(ai_subscribe_callback, pattern="^ai_subscribe$"))
+    app.add_handler(CallbackQueryHandler(ai_trial_activate_callback, pattern="^ai_trial_activate$"))
+    app.add_handler(CallbackQueryHandler(ai_sub_info_callback, pattern="^ai_sub_info$"))
     app.add_handler(CallbackQueryHandler(news_callback, pattern="^news_latest$"))
     app.add_handler(CallbackQueryHandler(news_sub_menu_callback, pattern="^news_sub_menu$"))
     app.add_handler(CallbackQueryHandler(sub_enable_callback, pattern="^sub_enable$"))
@@ -178,6 +192,10 @@ def create_bot_application() -> Application:
     app.add_handler(CallbackQueryHandler(documents_callback, pattern="^doc_"))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^adm_"))
     app.add_handler(CallbackQueryHandler(wizard_callback))
+
+    # Payments handlers (Pre-Checkout verification and successful payment notification)
+    app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
+    app.add_handler(MessageHandler(private_chat & filters.SUCCESSFUL_PAYMENT, successful_payment_handler), group=1)
 
     # Natural language AI chat fallback - strictly private 1-to-1 chat only
     app.add_handler(MessageHandler(private_chat & filters.TEXT & ~filters.COMMAND, ai_message_handler))

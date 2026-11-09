@@ -237,7 +237,7 @@ class _PgCompatConnection:
 
 
 def _ensure_postgres_schema(compat_conn: _PgCompatConnection) -> None:
-    """Ensure `users` and `news_cache` tables and indexes exist in PostgreSQL."""
+    """Ensure `users`, `news_cache`, and `bot_settings` tables and indexes exist in PostgreSQL."""
     cur = compat_conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -246,13 +246,18 @@ def _ensure_postgres_schema(compat_conn: _PgCompatConnection) -> None:
             first_name TEXT,
             last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_subscribed INTEGER DEFAULT 0,
-            ai_allowed INTEGER DEFAULT 0
+            ai_allowed INTEGER DEFAULT 0,
+            ai_expires_at TIMESTAMP NULL,
+            trial_used INTEGER DEFAULT 0
         )
     """)
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_allowed INTEGER DEFAULT 0")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_subscribed INTEGER DEFAULT 0")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_expires_at TIMESTAMP NULL")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_used INTEGER DEFAULT 0")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_sub ON users(is_subscribed)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_ai_exp ON users(ai_expires_at)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS news_cache (
@@ -263,11 +268,19 @@ def _ensure_postgres_schema(compat_conn: _PgCompatConnection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bot_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     compat_conn.commit()
 
 
 def _ensure_sqlite_persistent_schema(conn: sqlite3.Connection) -> None:
-    """Ensure `users` and `news_cache` tables exist on a SQLite connection."""
+    """Ensure `users`, `news_cache`, and `bot_settings` tables exist on a SQLite connection."""
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -276,13 +289,24 @@ def _ensure_sqlite_persistent_schema(conn: sqlite3.Connection) -> None:
             first_name TEXT,
             last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_subscribed INTEGER DEFAULT 0,
-            ai_allowed INTEGER DEFAULT 0
+            ai_allowed INTEGER DEFAULT 0,
+            ai_expires_at TIMESTAMP NULL,
+            trial_used INTEGER DEFAULT 0
         )
     """)
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN ai_allowed INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    for col_def in (
+        "ai_allowed INTEGER DEFAULT 0",
+        "is_subscribed INTEGER DEFAULT 0",
+        "ai_expires_at TIMESTAMP NULL",
+        "trial_used INTEGER DEFAULT 0",
+    ):
+        try:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_ai_exp ON users(ai_expires_at)")
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS news_cache (
             guid TEXT PRIMARY KEY,
@@ -290,6 +314,14 @@ def _ensure_sqlite_persistent_schema(conn: sqlite3.Connection) -> None:
             link TEXT NOT NULL,
             pub_date TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bot_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()

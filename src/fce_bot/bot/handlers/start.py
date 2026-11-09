@@ -35,6 +35,7 @@ Puoi cercare direttamente senza usare i bottoni:
 Puoi scrivere liberamente come a una persona:
 _"A che ora c'è la metro da Monte Po a Stesicoro?"_
 _"C'è un treno da Randazzo alle 12:30?"_
+L'Assistente AI offre 1 prova gratuita e successivamente un abbonamento di 30 giorni effettivi a soli 1€. Per gestire il tuo piano usa il comando /abbonamento.
 
 4. *Fermate:*
 `/fermate Milo` per vedere tutte le stazioni che contengono "Milo".
@@ -54,12 +55,10 @@ PRIVACY_TEXT = """🔒 *Informativa sulla Privacy & GDPR (Regolamento UE 2016/67
 
 • *Finalità del servizio:* Questo bot fornisce informazioni su orari, linee e avvisi di servizio della Ferrovia Circumetnea e Metropolitana di Catania.
 • *Registrazione Tecnica e Dati Trattati (Art. 5 e Art. 6):* Quando interagisci con il bot in chat privata, il sistema registra il tuo `chat_id` tecnico, l'eventuale `@username`, il nome (`first_name`) e il timestamp di ultimo utilizzo (`last_active`), impostando **notifiche disattivate** e **accesso AI disabilitato** per impostazione predefinita.
-• *Perché vengono conservati questi dati:* Questi dati sono utilizzati esclusivamente per:
-  1. Consentire all'amministratore o all'utente di gestire l'abilitazione all'Assistente AI o l'iscrizione volontaria agli avvisi di servizio;
-  2. Effettuare la pulizia automatica (`auto-clean`) dei profili inattivi tramite la data di ultimo accesso.
+• *Pagamenti e Abbonamenti AI (Minimizzazione dei Dati):* Quando attivi l'abbonamento all'Assistente AI (1€ per 30 giorni effettivi) o la prova gratuita una tantum di 3 giorni, il bot **NON** raccoglie né memorizza numeri di carta, dati bancari o indirizzi di fatturazione. I pagamenti sono elaborati in sicurezza direttamente da Telegram e dai circuiti certificati (es. Stripe). Vengono memorizzati solo la data di scadenza dell'accesso (`ai_expires_at`) e il flag dell'avvenuta fruizione della prova (`trial_used`). Alla scadenza, gli accessi vengono disattivati automaticamente senza rinnovi a sorpresa.
 • *Consenso alle Notifiche (Opt-in esplicito):* Nessun utente viene iscritto automaticamente agli avvisi broadcast. La ricezione delle notifiche avviene solo su esplicita attivazione tramite pulsante dedicato o comando /iscriviti (disattivabile in qualsiasi momento con /disiscriviti).
 • *Nessuna profilazione o cessione a terzi:* Non effettuiamo tracciamento pubblicitario o profilazione commerciale e nessun dato viene ceduto o condiviso con terze parti.
-• *Periodo di conservazione (Auto-Clean 60 giorni):* I record degli utenti che non interagiscono con il bot da oltre 60 giorni vengono rimossi automaticamente dal database.
+• *Periodo di conservazione (Auto-Clean 60 giorni):* I record degli utenti inattivi da oltre 60 giorni (privi di abbonamento attivo) vengono rimossi automaticamente dal database.
 • *Diritto alla Cancellazione / Oblio (Art. 17 GDPR):* Se non desideri più utilizzare il bot o vuoi rimuovere i tuoi dati, sei libero di farlo in qualsiasi momento inviando il comando /cancella (o /stop): il tuo record verrà eliminato immediatamente e definitivamente dal database."""
 
 

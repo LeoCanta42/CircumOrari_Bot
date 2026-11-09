@@ -5,6 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from fce_bot.config import settings
 from fce_bot.data.users_repo import UsersRepository
+from fce_bot.data.settings_repo import SettingsRepository
 from fce_bot.data.gtfs_loader import download_and_sync_gtfs
 from fce_bot.data.db import get_db, get_persistent_db, get_persistence_status
 from fce_bot.bot.keyb import (
@@ -12,11 +13,13 @@ from fce_bot.bot.keyb import (
     admin_users_list_keyboard,
     admin_user_detail_keyboard,
     admin_user_delete_confirm_keyboard,
+    admin_ai_settings_keyboard,
 )
 from fce_bot.bot.handlers.news import check_and_broadcast_news
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()
+settings_repo = SettingsRepository()
 
 
 def is_admin(user_id: int) -> bool:
@@ -52,12 +55,17 @@ def _format_stats_text() -> str:
     except Exception:
         news_cnt = 0
 
+    ai_active = stats.get("ai_active_users", stats.get("ai_allowed_users", 0))
+    ai_trials = stats.get("ai_trial_users", 0)
+    ai_expired = stats.get("ai_expired_users", 0)
+
     return (
         "📊 *Statistiche Sistema FCE Bot*\n\n"
         f"💾 *Storage Utenti:* {persistence['label']}\n\n"
         f"👥 *Utenti Totali:* `{stats['total_users']}`\n"
         f"🔔 *Iscritti attivi:* `{stats['subscribed_users']}`\n"
-        f"🤖 *Utenti con accesso AI:* `{stats['ai_allowed_users']}`\n"
+        f"🤖 *Utenti con accesso AI:* `{stats['ai_allowed_users']}` (Attivi: `{ai_active}` | Scaduti: `{ai_expired}`)\n"
+        f"🎁 *Prove gratuite utilizzate:* `{ai_trials}`\n"
         f"⚡ *Attivi ultimi 30gg:* `{stats['active_last_30_days']}`\n\n"
         "🗄 *Database GTFS:*\n"
         f"• Fermate censite: `{stops_cnt}` (`{cities_cnt}` comuni)\n"
@@ -91,19 +99,34 @@ def _format_user_card(user: dict) -> str:
     last_act = user.get("last_active") or "N/A"
     is_sub = bool(user.get("is_subscribed"))
     is_ai = bool(user.get("ai_allowed"))
+    ai_exp = user.get("ai_expires_at")
+    trial_used = bool(user.get("trial_used"))
 
     try:
         is_cfg_admin = int(cid) in settings.admin_user_ids
     except (ValueError, TypeError):
         is_cfg_admin = False
 
+    is_admin_test = is_cfg_admin and settings_repo.get_admin_ai_test_mode(cid)
     uname_display = f"`@{uname}`" if uname else "_(Nessun username)_"
     fname_display = f"`{fname}`" if fname else "_(Non specificato)_"
     sub_display = "🟢 Attive (Iscritto)" if is_sub else "🔴 Disattivate"
-    if is_cfg_admin:
+    if is_cfg_admin and not is_admin_test:
         ai_display = "👑 Abilitato (Admin di sistema)"
+    elif is_ai:
+        if ai_exp is None:
+            ai_display = "🟢 Abilitato (Permanente)"
+        else:
+            ai_display = f"🟢 Abilitato fino al `{ai_exp}` UTC"
+    elif ai_exp:
+        ai_display = f"🔴 Scaduto il `{ai_exp}` UTC"
     else:
-        ai_display = "🟢 Abilitato" if is_ai else "🔴 Disabilitato"
+        ai_display = "🔴 Disabilitato"
+
+    if is_admin_test:
+        ai_display += " _(🧪 Test Acquisto Attivo)_"
+
+    trial_display = "Utilizzata" if trial_used else "Disponibile (Non ancora usata)"
 
     return (
         "👤 *Scheda Utente FCE Bot*\n\n"
@@ -113,6 +136,7 @@ def _format_user_card(user: dict) -> str:
         f"🕒 *Ultimo accesso:* `{last_act}`\n\n"
         f"🔔 *Notifiche & Avvisi:* {sub_display}\n"
         f"🤖 *Accesso Assistente AI:* {ai_display}\n"
+        f"🎁 *Prova Gratuita 3gg:* `{trial_display}`\n"
     )
 
 
@@ -291,7 +315,15 @@ async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def allow_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Authorize a Telegram user (by @username or chat_id) to use the AI trip assistant (Admin only)."""
+    """Authorize a Telegram user (by @username or chat_id) to use the AI trip assistant (Admin only).
+    
+    Usage:
+      /allow_ai <@username|chat_id> [giorni|perm]
+      Examples:
+      /allow_ai 123456789        -> Abilita per 30 giorni
+      /allow_ai @mario 15        -> Abilita per 15 giorni
+      /allow_ai @mario perm      -> Accesso permanente illimitato
+    """
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.effective_message.reply_text("⛔ Comando riservato agli amministratori.")
@@ -300,7 +332,10 @@ async def allow_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not context.args:
         await update.effective_message.reply_text(
             "ℹ️ Inserisci il `chat_id` o `@username` dell'utente da abilitare all'AI.\n"
-            "Esempio: `/allow_ai 123456789` oppure `/allow_ai @username`",
+            "Esempi:\n"
+            "• `/allow_ai 123456789` (default 30 giorni)\n"
+            "• `/allow_ai @username 60` (specifica 60 giorni)\n"
+            "• `/allow_ai @username perm` (accesso permanente)",
             parse_mode="Markdown"
         )
         return
@@ -314,7 +349,18 @@ async def allow_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
 
-    users_repo.set_ai_allowed(target_chat_id, True)
+    days_arg = context.args[1].strip().lower() if len(context.args) > 1 else None
+    if days_arg in ("perm", "inf", "unlimited", "vita"):
+        users_repo.set_ai_permanent(target_chat_id)
+        period_desc = "in modo permanente (illimitato)"
+    elif days_arg and days_arg.isdigit():
+        d = int(days_arg)
+        ok, exp = users_repo.extend_ai_subscription(target_chat_id, days=d)
+        period_desc = f"per {d} giorni (fino al `{exp}` UTC)"
+    else:
+        sub_d = settings_repo.get_sub_days()
+        ok, exp = users_repo.extend_ai_subscription(target_chat_id, days=sub_d)
+        period_desc = f"per {sub_d} giorni (fino al `{exp}` UTC)"
 
     notified = False
     try:
@@ -322,7 +368,7 @@ async def allow_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             chat_id=target_chat_id,
             text=(
                 "🎉 *Accesso AI Abilitato!*\n\n"
-                "L'amministratore ha autorizzato il tuo account all'uso dell'Assistente AI FCE.\n"
+                f"L'amministratore ha autorizzato il tuo account all'uso dell'Assistente AI FCE {period_desc}.\n"
                 "Da adesso puoi scrivergli liberamente in chat per chiedere orari, coincidenze e percorsi!"
             ),
             parse_mode="Markdown"
@@ -331,7 +377,7 @@ async def allow_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as exc:
         logger.debug("Could not notify user %s of AI activation: %s", target_chat_id, exc)
 
-    msg = f"✅ Accesso AI *abilitato* per la chat ID: `{target_chat_id}`"
+    msg = f"✅ Accesso AI *abilitato* per la chat ID: `{target_chat_id}` {period_desc}"
     if identifier.lstrip("@") != str(target_chat_id):
         msg += f" (`{identifier}`)"
     if notified:
@@ -500,6 +546,43 @@ async def list_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+def _format_ai_settings_text(admin_id: int | str | None = None) -> str:
+    """Generate summary of AI pricing, duration, trial, and payment settings for admin."""
+    cfg = settings_repo.get_all_ai_settings()
+    trial_str = "🟢 Attiva" if cfg["trial_enabled"] else "🔴 Disattivata"
+    token_status = "🟢 Configurato" if cfg["has_provider_token"] else "⭐ Telegram Stars (Zero configurazione)"
+    price_label = f"`{cfg['sub_stars']} ⭐` (Stars)" if cfg["currency"] == "XTR" else f"`{cfg['sub_price_eur']:.2f} €`"
+
+    test_mode_str = ""
+    if admin_id is not None:
+        is_test = settings_repo.get_admin_ai_test_mode(admin_id)
+        if is_test:
+            test_mode_str = (
+                "\n🧪 *Tuo Account Admin:* `🔴 AI Disabilitata (Modalità Test Acquisto)`\n"
+                "_Il bypass VIP è sospeso. Puoi testare la prova gratuita o acquistare a 1 Stella come utente normale._\n"
+            )
+        else:
+            test_mode_str = (
+                "\n👑 *Tuo Account Admin:* `🟢 AI Abilitata (Accesso VIP Illimitato)`\n"
+                "_Puoi disabilitare temporaneamente l'AI per testare l'acquisto a 1 Stella._\n"
+            )
+
+    return (
+        "⚙️ *Configurazione Abbonamenti AI & Pagamenti*\n\n"
+        f"💵 *Prezzo Abbonamento:* {price_label} (mese da {cfg['sub_days']} giorni)\n"
+        f"📅 *Durata Periodo:* `{cfg['sub_days']}` giorni effettivi\n"
+        f"🎁 *Prova Gratuita:* {trial_str} (`{cfg['trial_days']}` giorni, 1 sola volta per utente)\n"
+        f"💱 *Valuta Attiva:* `{cfg['currency']}`\n"
+        f"🔑 *Provider Telegram:* {token_status} (`{cfg['provider_type']}`)\n"
+        f"{test_mode_str}\n"
+        "💡 *Regole del servizio:*\n"
+        "• Il mese è calcolato in giorni solari continui dal momento del pagamento.\n"
+        "• Alla scadenza, gli account vengono disattivati automaticamente.\n"
+        "• Nessun dato sensibile di pagamento viene conservato nel bot (GDPR Minimization).\n\n"
+        "Tocca i pulsanti sottostanti per personalizzare i parametri:"
+    )
+
+
 # ==========================================
 # Interactive Admin Panel Callbacks & Inputs
 # ==========================================
@@ -536,6 +619,71 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=admin_panel_keyboard(),
             parse_mode="Markdown"
         )
+        return
+
+    # 1b. AI Configuration & Pricing Dashboard
+    if data == "adm_ai_cfg" or data.startswith("adm_ai_cfg:"):
+        if data == "adm_ai_cfg":
+            await query.answer()
+        elif data == "adm_ai_cfg:toggle_trial":
+            cur_en = settings_repo.is_trial_enabled()
+            settings_repo.set_trial_enabled(not cur_en)
+            await query.answer("🎁 Prova: " + ("Disattivata" if cur_en else "Attivata!"))
+        elif data.startswith("adm_ai_cfg:trial_days:"):
+            d = int(data.split(":")[2])
+            settings_repo.set_trial_days(d)
+            await query.answer(f"⏱️ Prova impostata a {d} giorni")
+        elif data.startswith("adm_ai_cfg:sub_days:"):
+            d = int(data.split(":")[2])
+            settings_repo.set_sub_days(d)
+            await query.answer(f"📅 Mese impostato a {d} giorni")
+        elif data.startswith("adm_ai_cfg:price:"):
+            p = float(data.split(":")[2])
+            settings_repo.set_sub_price_eur(p)
+            await query.answer(f"💵 Prezzo impostato a {p:.2f} €")
+        elif data.startswith("adm_ai_cfg:stars:"):
+            s = int(data.split(":")[2])
+            settings_repo.set_sub_stars(s)
+            await query.answer(f"⭐ Prezzo impostato a {s} Stars")
+        elif data == "adm_ai_cfg:toggle_currency":
+            c = settings_repo.get_currency()
+            new_c = "XTR" if c == "EUR" else "EUR"
+            settings_repo.set_currency(new_c)
+            await query.answer(f"💱 Valuta impostata a {new_c}")
+        elif data == "adm_ai_cfg:toggle_admin_test":
+            cur_test = settings_repo.get_admin_ai_test_mode(user_id)
+            new_test = not cur_test
+            settings_repo.set_admin_ai_test_mode(user_id, new_test)
+            if new_test:
+                users_repo.set_ai_allowed(user_id, False)
+                users_repo.reset_trial(user_id)
+                await query.answer(
+                    "🧪 Modalità test attivata!\nAI disabilitata per il tuo account admin.\nOra puoi testare prova e acquisto a 1 Stella.",
+                    show_alert=True
+                )
+            else:
+                users_repo.set_ai_permanent(user_id)
+                await query.answer(
+                    "👑 Modalità test disattivata!\nAccesso VIP illimitato ripristinato.",
+                    show_alert=True
+                )
+        elif data == "adm_ai_cfg:clean_expired":
+            cnt = users_repo.deactivate_expired_users()
+            await query.answer(f"🧹 Disattivati {cnt} utenti con abbonamento/prova scaduti!", show_alert=True)
+
+        is_test_mode = settings_repo.get_admin_ai_test_mode(user_id)
+        try:
+            await query.edit_message_text(
+                _format_ai_settings_text(admin_id=user_id),
+                reply_markup=admin_ai_settings_keyboard(
+                    settings_repo.get_all_ai_settings(),
+                    admin_test_mode=is_test_mode
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            if "Message is not modified" not in str(e):
+                logger.debug("AI settings edit notice: %s", e)
         return
 
     # 2. System Statistics
@@ -637,6 +785,108 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "chat_id": target_cid, "username": None, "first_name": None,
             "last_active": None, "is_subscribed": 0, "ai_allowed": 1 if new_val else 0
         }
+        await query.edit_message_text(
+            _format_user_card(user_rec),
+            reply_markup=admin_user_detail_keyboard(user_rec, back_filter=back_filter, back_page=back_page),
+            parse_mode="Markdown"
+        )
+        return
+
+    # 5b. Add 30 Days AI Access
+    if data.startswith("adm_u_add30:"):
+        parts = data.split(":")
+        target_cid = parts[1] if len(parts) > 1 else ""
+        back_filter = parts[2] if len(parts) > 2 else "all"
+        back_page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        sub_d = settings_repo.get_sub_days()
+        ok, exp = users_repo.extend_ai_subscription(target_cid, days=sub_d)
+        await query.answer(f"➕ Aggiunti {sub_d} giorni all'utente!")
+        try:
+            await context.bot.send_message(
+                chat_id=target_cid,
+                text=(
+                    f"🎉 *Abbonamento AI Esteso!*\n\n"
+                    f"L'amministratore ha esteso il tuo accesso all'Assistente AI di {sub_d} giorni.\n"
+                    f"📅 *Scadenza:* `{exp}` UTC"
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        user_rec = users_repo.get_user(target_cid)
+        await query.edit_message_text(
+            _format_user_card(user_rec),
+            reply_markup=admin_user_detail_keyboard(user_rec, back_filter=back_filter, back_page=back_page),
+            parse_mode="Markdown"
+        )
+        return
+
+    # 5c. Assign Free Trial to User
+    if data.startswith("adm_u_trial:"):
+        parts = data.split(":")
+        target_cid = parts[1] if len(parts) > 1 else ""
+        back_filter = parts[2] if len(parts) > 2 else "all"
+        back_page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        t_days = settings_repo.get_trial_days()
+        users_repo.reset_trial(target_cid)  # Allow admin to grant trial even if used
+        ok, exp = users_repo.activate_trial(target_cid, days=t_days)
+        await query.answer("🎁 Prova assegnata con successo!")
+        try:
+            await context.bot.send_message(
+                chat_id=target_cid,
+                text=(
+                    f"🎁 *Prova Gratuita AI Assegnata!*\n\n"
+                    f"L'amministratore ti ha assegnato {t_days} giorni di prova dell'Assistente AI.\n"
+                    f"📅 *Scadenza:* `{exp}` UTC"
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        user_rec = users_repo.get_user(target_cid)
+        await query.edit_message_text(
+            _format_user_card(user_rec),
+            reply_markup=admin_user_detail_keyboard(user_rec, back_filter=back_filter, back_page=back_page),
+            parse_mode="Markdown"
+        )
+        return
+
+    # 5d. Grant Permanent AI Access
+    if data.startswith("adm_u_perm:"):
+        parts = data.split(":")
+        target_cid = parts[1] if len(parts) > 1 else ""
+        back_filter = parts[2] if len(parts) > 2 else "all"
+        back_page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        users_repo.set_ai_permanent(target_cid)
+        await query.answer("♾️ Accesso permanente illimitato conferito!")
+        try:
+            await context.bot.send_message(
+                chat_id=target_cid,
+                text=(
+                    "👑 *Accesso AI Permanente!*\n\n"
+                    "L'amministratore ti ha concesso accesso illimitato permanente all'Assistente AI."
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        user_rec = users_repo.get_user(target_cid)
+        await query.edit_message_text(
+            _format_user_card(user_rec),
+            reply_markup=admin_user_detail_keyboard(user_rec, back_filter=back_filter, back_page=back_page),
+            parse_mode="Markdown"
+        )
+        return
+
+    # 5e. Reset Trial Flag
+    if data.startswith("adm_u_rtrial:"):
+        parts = data.split(":")
+        target_cid = parts[1] if len(parts) > 1 else ""
+        back_filter = parts[2] if len(parts) > 2 else "all"
+        back_page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        users_repo.reset_trial(target_cid)
+        await query.answer("🔄 Prova resettata (l'utente può attivarla di nuovo)!")
+        user_rec = users_repo.get_user(target_cid)
         await query.edit_message_text(
             _format_user_card(user_rec),
             reply_markup=admin_user_detail_keyboard(user_rec, back_filter=back_filter, back_page=back_page),

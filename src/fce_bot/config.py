@@ -119,6 +119,36 @@ class Settings(BaseSettings):
     )
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"
 
+    # AI Subscription & Payments Configuration
+    PAYMENT_PROVIDER_TOKEN: Optional[str] = Field(
+        default_factory=lambda: os.getenv("PAYMENT_PROVIDER_TOKEN", ""),
+        description="Telegram Payment Provider Token from @BotFather (e.g. Stripe test/live) or empty for Telegram Stars"
+    )
+    AI_SUBSCRIPTION_PRICE_EUR: float = Field(
+        default=1.00,
+        description="Monthly AI subscription cost in EUR"
+    )
+    AI_SUBSCRIPTION_STARS: int = Field(
+        default=50,
+        description="Monthly AI subscription cost in Telegram Stars (XTR)"
+    )
+    AI_SUBSCRIPTION_DAYS: int = Field(
+        default=30,
+        description="Duration of monthly AI access in calendar days"
+    )
+    AI_TRIAL_DAYS: int = Field(
+        default=3,
+        description="Duration of one-time free AI trial in calendar days"
+    )
+    AI_TRIAL_ENABLED: bool = Field(
+        default=True,
+        description="Whether the one-time free trial can be activated by new users"
+    )
+    AI_CURRENCY: str = Field(
+        default="XTR",
+        description="Billing currency: XTR (Telegram Stars) or EUR (via payment provider)"
+    )
+
     # Vercel & Webhook configuration
     WEBHOOK_URL: Optional[str] = None  # e.g. https://my-fce-bot.vercel.app/api/webhook
     WEBHOOK_SECRET: Optional[str] = None

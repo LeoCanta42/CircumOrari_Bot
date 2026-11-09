@@ -5,12 +5,14 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from fce_bot.services.ai_service import ai_service
 from fce_bot.data.users_repo import UsersRepository
-from fce_bot.bot.keyb import main_menu_keyboard
+from fce_bot.data.settings_repo import SettingsRepository
+from fce_bot.bot.keyb import main_menu_keyboard, ai_subscription_prompt_keyboard
 from fce_bot.bot.handlers.admin import is_admin, handle_admin_text_input
 from fce_bot.bot.handlers.timetable import handle_wizard_text_input
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()
+settings_repo = SettingsRepository()
 
 
 async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -65,20 +67,51 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if handled_wiz:
                 return
 
-    # Permission check: AI is restricted to admin and authorized users only
+    # Permission check: AI is restricted to paid, trial, and authorized users only
     if not users_repo.is_ai_allowed(chat.id):
         logger.info("Unauthorized AI access attempt from chat_id %s", chat.id)
-        restricted_msg = (
-            "🔒 *Assistente AI ad accesso limitato*\n\n"
-            "L'assistente conversazionale AI è attualmente riservato agli utenti abilitati dall'amministratore.\n\n"
-            f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
-            "Puoi comunicare questo ID all'amministratore per richiedere l'abilitazione (es. con `/allow_ai {chat.id}`).\n\n"
-            "Nel frattempo, puoi cercare tutte le corse e gli orari con il tasto *Cerca Linea / Orari* oppure usando i comandi /viaggio e /fermate."
-        ).format(chat=chat)
+        status = users_repo.get_ai_status(chat.id)
+        price_str = settings_repo.get_price_display()
+        sub_days = settings_repo.get_sub_days()
+        can_trial = not status.get("trial_used") and settings_repo.is_trial_enabled()
+        is_expired = status.get("is_expired", False)
+
+        if is_expired:
+            exp_str = status.get("ai_expires_at") or "recente"
+            restricted_msg = (
+                "🔒 *Assistente AI ad accesso limitato (Abbonamento Scaduto)*\n\n"
+                f"Il tuo periodo di accesso all'Assistente AI è terminato il `{exp_str}` (UTC).\n\n"
+                f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
+                f"Per continuare ad utilizzarlo, puoi rinnovare l'accesso per altri {sub_days} giorni a soli *{price_str}*.\n\n"
+                "Nel frattempo puoi sempre cercare corse e fermate tramite i comandi /viaggio e /fermate."
+            )
+        elif can_trial:
+            restricted_msg = (
+                "🤖 *Assistente AI ad accesso limitato*\n\n"
+                "L'assistente conversazionale AI ti permette di trovare corse, orari e coincidenze parlando naturalmente.\n\n"
+                f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
+                f"🎁 *Hai a disposizione 1 Prova Gratuita di {settings_repo.get_trial_days()} giorni!*\n"
+                "Puoi attivarla subito gratuitamente senza alcun costo o impegno.\n\n"
+                f"Al termine, potrai rinnovare per {sub_days} giorni a soli *{price_str}*."
+            )
+        else:
+            restricted_msg = (
+                "🔒 *Assistente AI ad accesso limitato*\n\n"
+                "L'assistente conversazionale AI è attivo per gli utenti abbonati.\n\n"
+                f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
+                f"Puoi attivare l'accesso illimitato per {sub_days} giorni (calcolati dal momento dell'attivazione) a soli *{price_str}*."
+            )
+
+        reply_markup = ai_subscription_prompt_keyboard(
+            can_trial=can_trial,
+            is_expired=is_expired,
+            price_display=price_str,
+            sub_days=sub_days
+        )
         await message.reply_text(
             restricted_msg,
             parse_mode="Markdown",
-            reply_markup=main_menu_keyboard(is_admin_user=admin_flag)
+            reply_markup=reply_markup
         )
         return
 
@@ -103,7 +136,7 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Explain how to use the AI assistant."""
+    """Explain how to use the AI assistant and display subscription status."""
     query = update.callback_query
     await query.answer()
 
@@ -113,19 +146,48 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     uid = getattr(user, "id", None) or chat_id
     admin_flag = is_admin(uid) if isinstance(uid, int) else False
 
-    # If user is not authorized for AI, display restriction notice and instructions
+    # If user is not authorized for AI, display subscription / trial offer
     if chat_id and not users_repo.is_ai_allowed(chat_id):
-        restricted_msg = (
-            "🔒 *Assistente AI ad accesso limitato*\n\n"
-            "L'assistente conversazionale AI è attualmente riservato agli utenti abilitati dall'amministratore.\n\n"
-            f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
-            "Puoi comunicare questo identificativo all'amministratore per richiedere l'abilitazione.\n\n"
-            "Puoi comunque cercare tutte le corse e gli orari con il tasto *Cerca Linea / Orari* oppure usando i comandi /viaggio e /fermate."
+        status = users_repo.get_ai_status(chat_id)
+        price_str = settings_repo.get_price_display()
+        sub_days = settings_repo.get_sub_days()
+        can_trial = not status.get("trial_used") and settings_repo.is_trial_enabled()
+        is_expired = status.get("is_expired", False)
+
+        if is_expired:
+            exp_str = status.get("ai_expires_at") or "recente"
+            restricted_msg = (
+                "🔒 *Assistente AI ad accesso limitato (Abbonamento Scaduto)*\n\n"
+                f"Il tuo periodo di accesso all'Assistente AI è terminato il `{exp_str}` (UTC).\n\n"
+                f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
+                f"Puoi riattivare l'accesso per {sub_days} giorni a soli *{price_str}*."
+            )
+        elif can_trial:
+            restricted_msg = (
+                "🤖 *Assistente AI ad accesso limitato*\n\n"
+                "L'assistente intelligente risponde in tempo reale su orari di treni, bus e metro.\n\n"
+                f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
+                f"🎁 *Hai a disposizione 1 Prova Gratuita di {settings_repo.get_trial_days()} giorni!*\n"
+                "Attivala con un solo tocco senza inserire alcuna carta.\n\n"
+                f"Successivamente potrai rinnovare per {sub_days} giorni a soli *{price_str}*."
+            )
+        else:
+            restricted_msg = (
+                "🔒 *Assistente AI ad accesso limitato*\n\n"
+                f"L'assistente conversazionale è disponibile per {sub_days} giorni a soli *{price_str}*.\n\n"
+                f"🆔 Il tuo ID chat è: `{chat_id}`"
+            )
+
+        reply_markup = ai_subscription_prompt_keyboard(
+            can_trial=can_trial,
+            is_expired=is_expired,
+            price_display=price_str,
+            sub_days=sub_days
         )
         try:
             await query.edit_message_text(
                 restricted_msg,
-                reply_markup=main_menu_keyboard(is_admin_user=admin_flag),
+                reply_markup=reply_markup,
                 parse_mode="Markdown"
             )
         except Exception as e:
@@ -133,8 +195,21 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 logger.debug("AI help restricted edit notice: %s", e)
         return
 
+    # For authorized users, display instructions and their active subscription status
+    status = users_repo.get_ai_status(chat_id) if chat_id else {}
+    if status.get("is_admin"):
+        sub_info = "👑 *Stato Accesso:* Illimitato permanente (Admin)"
+    elif status.get("is_permanent"):
+        sub_info = "🟢 *Stato Accesso:* Permanente"
+    elif status.get("ai_expires_at"):
+        days_rem = status.get("days_remaining", 0)
+        sub_info = f"🟢 *Stato Accesso:* Attivo fino al `{status['ai_expires_at']}` UTC ({days_rem} giorni rimasti)"
+    else:
+        sub_info = "🟢 *Stato Accesso:* Abilitato"
+
     help_msg = (
         "🤖 *Assistente AI per la Mobilità FCE*\n\n"
+        f"{sub_info}\n\n"
         "Non serve cliccare decine di pulsanti! Puoi scrivermi qualsiasi domanda come se parlassi con una persona reale.\n\n"
         "💬 *Esempi di domande che puoi fare:*\n"
         "• _\"Come vado da Catania a Bronte alle 14:00?\"_\n"

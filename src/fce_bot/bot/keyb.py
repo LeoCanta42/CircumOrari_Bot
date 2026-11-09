@@ -43,14 +43,15 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔎 Cerca Utente", callback_data="adm_search_prompt"),
         ],
         [
+            InlineKeyboardButton("⚙️ Impostazioni AI & Prezzi", callback_data="adm_ai_cfg"),
             InlineKeyboardButton("📊 Statistiche", callback_data="adm_stats"),
-            InlineKeyboardButton("🔄 Sincronizza GTFS", callback_data="adm_sync_gtfs"),
         ],
         [
-            InlineKeyboardButton("📢 Invia Broadcast", callback_data="adm_broadcast_prompt"),
+            InlineKeyboardButton("🔄 Sincronizza GTFS", callback_data="adm_sync_gtfs"),
             InlineKeyboardButton("📰 Controlla Notizie", callback_data="adm_check_news"),
         ],
         [
+            InlineKeyboardButton("📢 Invia Broadcast", callback_data="adm_broadcast_prompt"),
             InlineKeyboardButton("🧹 Pulisci Inattivi (60gg)", callback_data="adm_prune"),
         ],
         [
@@ -141,27 +142,138 @@ def admin_user_detail_keyboard(
     cid = str(user.get("chat_id", ""))
     is_sub = bool(user.get("is_subscribed"))
     is_ai = bool(user.get("ai_allowed"))
+    trial_used = bool(user.get("trial_used"))
 
-    ai_btn = (
-        InlineKeyboardButton("🚫 Disabilita AI", callback_data=f"adm_u_ai:{cid}:0:{back_filter}:{back_page}")
-        if is_ai
-        else InlineKeyboardButton("✅ Abilita AI", callback_data=f"adm_u_ai:{cid}:1:{back_filter}:{back_page}")
-    )
     sub_btn = (
         InlineKeyboardButton("🔕 Disattiva Notifiche", callback_data=f"adm_u_sub:{cid}:0:{back_filter}:{back_page}")
         if is_sub
         else InlineKeyboardButton("🔔 Attiva Notifiche", callback_data=f"adm_u_sub:{cid}:1:{back_filter}:{back_page}")
     )
 
-    return InlineKeyboardMarkup([
-        [ai_btn],
-        [sub_btn],
-        [InlineKeyboardButton("🗑 Cancella Utente (Elimina Record)", callback_data=f"adm_u_del_ask:{cid}:{back_filter}:{back_page}")],
+    rows = [
+        [
+            InlineKeyboardButton("➕ +30gg AI", callback_data=f"adm_u_add30:{cid}:{back_filter}:{back_page}"),
+            InlineKeyboardButton("🎁 Prova 3gg", callback_data=f"adm_u_trial:{cid}:{back_filter}:{back_page}"),
+        ],
+        [
+            InlineKeyboardButton("♾️ Accesso Illimitato", callback_data=f"adm_u_perm:{cid}:{back_filter}:{back_page}"),
+            InlineKeyboardButton("🚫 Revoca AI", callback_data=f"adm_u_ai:{cid}:0:{back_filter}:{back_page}"),
+        ],
+        [
+            InlineKeyboardButton(
+                "🔄 Resetta Prova" if trial_used else "✅ Prova Non Usata",
+                callback_data=f"adm_u_rtrial:{cid}:{back_filter}:{back_page}"
+            ),
+            sub_btn,
+        ],
+        [
+            InlineKeyboardButton("🗑 Cancella Utente (GDPR)", callback_data=f"adm_u_del_ask:{cid}:{back_filter}:{back_page}"),
+        ],
         [
             InlineKeyboardButton("⬅️ Lista Utenti", callback_data=f"adm_users:{back_filter}:{back_page}"),
             InlineKeyboardButton("🛠 Pannello Admin", callback_data="adm_menu"),
         ],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_ai_settings_keyboard(
+    current_settings: dict,
+    admin_test_mode: bool = False
+) -> InlineKeyboardMarkup:
+    """Keyboard for managing AI subscription prices, duration, trial and payments."""
+    trial_enabled = current_settings.get("trial_enabled", True)
+    curr = current_settings.get("currency", "XTR")
+    trial_days = current_settings.get("trial_days", 3)
+    sub_days = current_settings.get("sub_days", 30)
+    price = current_settings.get("sub_price_eur", 1.0)
+    stars = current_settings.get("sub_stars", 50)
+
+    trial_toggle_label = "🎁 Prova 3gg: 🟢 ON (Attiva)" if trial_enabled else "🎁 Prova 3gg: 🔴 OFF (Spenta)"
+    curr_label = "💱 Valuta: ⭐ Telegram Stars (XTR)" if curr == "XTR" else "💱 Valuta: EUR (€)"
+
+    if curr == "XTR":
+        price_row = [
+            InlineKeyboardButton(f"⭐ Stars: {stars}", callback_data="noop"),
+            InlineKeyboardButton("1⭐ (Test)", callback_data="adm_ai_cfg:stars:1"),
+            InlineKeyboardButton("25⭐", callback_data="adm_ai_cfg:stars:25"),
+            InlineKeyboardButton("50⭐ (~1€)", callback_data="adm_ai_cfg:stars:50"),
+            InlineKeyboardButton("100⭐", callback_data="adm_ai_cfg:stars:100"),
+        ]
+    else:
+        price_row = [
+            InlineKeyboardButton(f"💵 Prezzo: {price:.2f}€", callback_data="noop"),
+            InlineKeyboardButton("0.50€", callback_data="adm_ai_cfg:price:0.50"),
+            InlineKeyboardButton("1.00€", callback_data="adm_ai_cfg:price:1.00"),
+            InlineKeyboardButton("2.00€", callback_data="adm_ai_cfg:price:2.00"),
+        ]
+
+    test_btn_label = (
+        "👑 Riabilita AI per Me (Torna VIP)"
+        if admin_test_mode
+        else "🧪 Disabilita AI per Me (Test Acquisto)"
+    )
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(trial_toggle_label, callback_data="adm_ai_cfg:toggle_trial"),
+        ],
+        [
+            InlineKeyboardButton(f"⏱️ Prova: {trial_days}gg", callback_data="noop"),
+            InlineKeyboardButton("1gg", callback_data="adm_ai_cfg:trial_days:1"),
+            InlineKeyboardButton("3gg", callback_data="adm_ai_cfg:trial_days:3"),
+            InlineKeyboardButton("7gg", callback_data="adm_ai_cfg:trial_days:7"),
+        ],
+        [
+            InlineKeyboardButton(f"📅 Mese: {sub_days}gg", callback_data="noop"),
+            InlineKeyboardButton("15gg", callback_data="adm_ai_cfg:sub_days:15"),
+            InlineKeyboardButton("30gg", callback_data="adm_ai_cfg:sub_days:30"),
+            InlineKeyboardButton("60gg", callback_data="adm_ai_cfg:sub_days:60"),
+        ],
+        price_row,
+        [
+            InlineKeyboardButton(curr_label, callback_data="adm_ai_cfg:toggle_currency"),
+        ],
+        [
+            InlineKeyboardButton(test_btn_label, callback_data="adm_ai_cfg:toggle_admin_test"),
+        ],
+        [
+            InlineKeyboardButton("🧹 Disattiva Utenti Scaduti Adesso", callback_data="adm_ai_cfg:clean_expired"),
+        ],
+        [
+            InlineKeyboardButton("⬅️ Pannello Admin", callback_data="adm_menu"),
+        ],
     ])
+
+
+def ai_subscription_prompt_keyboard(
+    can_trial: bool = False,
+    is_expired: bool = False,
+    price_display: str = "1,00 €",
+    sub_days: int = 30
+) -> InlineKeyboardMarkup:
+    """Prompt keyboard presented to user for activating trial or purchasing monthly AI access."""
+    rows = []
+    if can_trial:
+        rows.append([
+            InlineKeyboardButton("🎁 Attiva Prova Gratuita (3 giorni)", callback_data="ai_trial_activate")
+        ])
+
+    btn_label = (
+        f"💳 Rinnova Abbonamento ({price_display} / {sub_days}gg)"
+        if is_expired
+        else f"💳 Abbonati a {price_display} ({sub_days} giorni)"
+    )
+    rows.append([
+        InlineKeyboardButton(btn_label, callback_data="ai_subscribe")
+    ])
+    rows.append([
+        InlineKeyboardButton("ℹ️ Info Privacy & Abbonamento", callback_data="ai_sub_info"),
+    ])
+    rows.append([
+        InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main"),
+    ])
+    return InlineKeyboardMarkup(rows)
 
 
 def admin_user_delete_confirm_keyboard(
