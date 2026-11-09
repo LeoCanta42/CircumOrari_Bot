@@ -96,14 +96,6 @@
             flex-shrink: 0;
             box-shadow: 0 2px 6px rgba(0,0,0,0.12);
         }
-        .pwa-banner-logo {
-            width: 44px;
-            height: 44px;
-            border-radius: 10px;
-            display: block;
-            flex-shrink: 0;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-        }
         .brand-sub {
             font-size: 0.76rem;
             color: var(--text-muted);
@@ -193,64 +185,6 @@
                 padding: 5px 7px;
                 font-size: 0.74rem;
             }
-        }
-
-        /* PWA Install Banner */
-        .pwa-banner {
-            background: #fff5f5;
-            border-bottom: 2px solid #dc2626;
-            padding: 10px 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            box-shadow: var(--shadow-sm);
-        }
-        .pwa-banner-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .pwa-banner-icon { font-size: 1.6rem; }
-        .pwa-banner-title { font-weight: 700; font-size: 0.92rem; color: #7f1d1d; }
-        .pwa-banner-desc { font-size: 0.8rem; color: #991b1b; }
-        .pwa-banner-right {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .btn-pwa-install {
-            background: #dc2626;
-            color: white;
-            border: none;
-            padding: 7px 16px;
-            border-radius: 8px;
-            font-weight: 700;
-            font-size: 0.85rem;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: background 0.2s;
-        }
-        .btn-pwa-install:hover { background: #b91c1c; }
-        .btn-pwa-close {
-            background: none;
-            border: none;
-            font-size: 1.2rem;
-            color: #991b1b;
-            cursor: pointer;
-            padding: 4px;
-        }
-        @media (max-width: 640px) {
-            .pwa-banner {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-            }
-            .pwa-banner-right {
-                width: 100%;
-                justify-content: space-between;
-            }
-            .btn-pwa-install { flex: 1; }
         }
 
         /* Modal Backdrop & Card */
@@ -1005,21 +939,6 @@
             </div>
         </div>
     </nav>
-
-    <!-- PWA Install Banner -->
-    <div id="pwaBanner" class="pwa-banner" style="display:none;">
-        <div class="pwa-banner-left">
-            <img src="/static/icons/icon.svg" class="pwa-banner-logo" alt="FCE App Icon" width="46" height="46">
-            <div class="pwa-banner-text">
-                <div class="pwa-banner-title">Scarica l'App FCE Orari</div>
-                <div class="pwa-banner-desc">Installala sullo schermo per consultare gli orari all'istante anche offline!</div>
-            </div>
-        </div>
-        <div class="pwa-banner-right">
-            <button type="button" class="btn-pwa-install" onclick="promptPWAInstall()">Scarica Ora</button>
-            <button type="button" class="btn-pwa-close" onclick="dismissPwaBanner()" title="Chiudi">✕</button>
-        </div>
-    </div>
 
     <!-- PWA Installation Modal (iOS / Manual guide) -->
     <div id="pwaModal" class="modal-backdrop" onclick="closePwaModal(event)" style="display:none;">
@@ -1786,10 +1705,6 @@
 
             // Make download triggers visible
             document.querySelectorAll('.pwa-install-trigger').forEach(el => el.style.display = 'inline-flex');
-            const banner = document.getElementById('pwaBanner');
-            if (banner && !sessionStorage.getItem('pwa_banner_dismissed')) {
-                banner.style.display = 'flex';
-            }
 
             // Automatically open download dialog on first visit as requested!
             if (!sessionStorage.getItem('pwa_auto_prompted')) {
@@ -1806,24 +1721,14 @@
         window.addEventListener('appinstalled', () => {
             deferredPrompt = null;
             document.querySelectorAll('.pwa-install-trigger').forEach(el => el.style.display = 'none');
-            const banner = document.getElementById('pwaBanner');
-            if (banner) banner.style.display = 'none';
             console.log('FCE PWA successfully installed on device');
         });
-
-        function dismissPwaBanner() {
-            sessionStorage.setItem('pwa_banner_dismissed', 'true');
-            const banner = document.getElementById('pwaBanner');
-            if (banner) banner.style.display = 'none';
-        }
 
         async function promptPWAInstall() {
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const choice = await deferredPrompt.userChoice;
                 if (choice && choice.outcome === 'accepted') {
-                    const banner = document.getElementById('pwaBanner');
-                    if (banner) banner.style.display = 'none';
                     document.querySelectorAll('.pwa-install-trigger').forEach(el => el.style.display = 'none');
                 }
                 deferredPrompt = null;
@@ -1896,8 +1801,6 @@
             // Check if already in standalone mode
             if (window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && navigator.standalone)) {
                 document.querySelectorAll('.pwa-install-trigger').forEach(el => el.style.display = 'none');
-                const banner = document.getElementById('pwaBanner');
-                if (banner) banner.style.display = 'none';
             }
         });
     </script>

@@ -1,9 +1,9 @@
 """FastAPI REST router for webhooks, Vercel cron, REST transit endpoints and Web UI."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional, List, Any, Dict
-import httpx
 from fastapi import APIRouter, Request, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from telegram import Update
@@ -22,8 +22,18 @@ from fce_bot.data.users_repo import UsersRepository
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Cached Telegram Application instance for serverless invocations
+# Cached Telegram Application instance and event loop tracking for serverless invocations
 _telegram_app = None
+_telegram_app_loop = None
+_webhook_updates_synced = False
+
+ALLOWED_TELEGRAM_UPDATES: List[str] = [
+    "message",
+    "edited_message",
+    "callback_query",
+    "pre_checkout_query",
+    "my_chat_member",
+]
 
 
 def get_telegram_app():
@@ -33,30 +43,83 @@ def get_telegram_app():
     return _telegram_app
 
 
+async def _prepare_telegram_app():
+    """Prepare the cached Telegram Application for the current request's asyncio event loop.
+
+    On Vercel's Python ASGI runtime, each HTTP request executes inside a new event loop
+    that is closed when the request completes. Rebuilding the underlying HTTPX clients
+    when the event loop changes prevents `RuntimeError: Event loop is closed` on
+    subsequent invocations (such as answering `pre_checkout_query`).
+    """
+    global _telegram_app_loop
+    app = get_telegram_app()
+    current_loop = asyncio.get_running_loop()
+
+    if _telegram_app_loop is not None and _telegram_app_loop is not current_loop:
+        for req in getattr(app.bot, "_request", ()):
+            if hasattr(req, "_build_client"):
+                req._client = req._build_client()
+    else:
+        for req in getattr(app.bot, "_request", ()):
+            if hasattr(req, "initialize"):
+                await req.initialize()
+
+    _telegram_app_loop = current_loop
+
+    if not getattr(app, "_initialized", False):
+        await app.initialize()
+
+    return app
+
+
+async def _shutdown_telegram_app_requests(app) -> None:
+    """Cleanly close per-request HTTPX transport pools before serverless loop teardown."""
+    for req in getattr(app.bot, "_request", ()):
+        try:
+            if hasattr(req, "shutdown"):
+                await req.shutdown()
+        except Exception:
+            pass
+
+
+async def _ensure_webhook_allowed_updates(app) -> Optional[Dict[str, Any]]:
+    """Ensure the Telegram webhook includes `pre_checkout_query` in `allowed_updates`."""
+    global _webhook_updates_synced
+    token = getattr(app.bot, "token", "") or ""
+    if not token or token.startswith("0000000000"):
+        return None
+
+    try:
+        info = await app.bot.get_webhook_info()
+        target_url = getattr(info, "url", None) or settings.WEBHOOK_URL or ""
+        current_allowed = list(getattr(info, "allowed_updates", None) or [])
+
+        if target_url and (not getattr(info, "url", None) or "pre_checkout_query" not in current_allowed):
+            await app.bot.set_webhook(
+                url=target_url,
+                allowed_updates=ALLOWED_TELEGRAM_UPDATES,
+                secret_token=settings.WEBHOOK_SECRET or None,
+            )
+            _webhook_updates_synced = True
+            info = await app.bot.get_webhook_info()
+            current_allowed = list(getattr(info, "allowed_updates", None) or [])
+        elif target_url:
+            _webhook_updates_synced = True
+
+        return {
+            "webhook_active": bool(getattr(info, "url", None)),
+            "allowed_updates": current_allowed,
+            "pending_update_count": getattr(info, "pending_update_count", 0),
+            "last_error_message": getattr(info, "last_error_message", None),
+        }
+    except Exception as e:
+        logger.warning("Could not verify/sync Telegram webhook allowed_updates: %s", e)
+        return None
+
+
 # ==========================================
 # Telegram Webhook & Cron Endpoints
 # ==========================================
-
-ALLOWED_TELEGRAM_UPDATES: List[str] = [
-    "message",
-    "callback_query",
-    "pre_checkout_query",
-    "my_chat_member",
-]
-
-
-def _verify_webhook_auth(
-    authorization: Optional[str] = None,
-    secret: Optional[str] = None,
-    x_telegram_bot_api_secret_token: Optional[str] = None,
-) -> None:
-    """Validate webhook management credentials using CRON_SECRET or WEBHOOK_SECRET."""
-    valid_secrets = {s for s in (settings.CRON_SECRET, settings.WEBHOOK_SECRET) if s}
-    if valid_secrets:
-        token = (authorization or "").replace("Bearer ", "").strip() or secret or x_telegram_bot_api_secret_token
-        if not token or token not in valid_secrets:
-            raise HTTPException(status_code=403, detail="Unauthorized: invalid secret token")
-
 
 @router.post("/api/webhook")
 @router.post("/webhook")
@@ -70,114 +133,19 @@ async def telegram_webhook(
 
     try:
         data = await request.json()
+        app = await _prepare_telegram_app()
+        try:
+            if not _webhook_updates_synced and isinstance(data, dict) and "pre_checkout_query" not in data:
+                await _ensure_webhook_allowed_updates(app)
 
-        # Fast-Path for pre_checkout_query: respond immediately to prevent BOT_PRECHECKOUT_TIMEOUT (<10s limit)
-        if isinstance(data, dict) and "pre_checkout_query" in data:
-            pcq = data["pre_checkout_query"]
-            pcq_id = pcq.get("id")
-            invoice_payload = pcq.get("invoice_payload") or ""
-            is_valid = invoice_payload.startswith("ai_sub:")
-            if settings.TELEGRAM_BOT_TOKEN and pcq_id:
-                try:
-                    async with httpx.AsyncClient(timeout=5.0) as client:
-                        api_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerPreCheckoutQuery"
-                        tg_payload: Dict[str, Any] = {
-                            "pre_checkout_query_id": pcq_id,
-                            "ok": is_valid,
-                        }
-                        if not is_valid:
-                            tg_payload["error_message"] = "Ordine non valido o scaduto."
-                        resp = await client.post(api_url, json=tg_payload)
-                        logger.info(
-                            "Fast-path answerPreCheckoutQuery sent (id=%s, ok=%s): HTTP %s",
-                            pcq_id, is_valid, resp.status_code
-                        )
-                except Exception as ex:
-                    logger.warning("Fast-path answerPreCheckoutQuery failed: %s", ex)
-
-        app = get_telegram_app()
-        # Initialize application if not yet initialized
-        if not getattr(app, "_initialized", False):
-            await app.initialize()
-
-        update = Update.de_json(data, app.bot)
-        await app.process_update(update)
+            update = Update.de_json(data, app.bot)
+            await app.process_update(update)
+        finally:
+            await _shutdown_telegram_app_requests(app)
         return {"ok": True}
     except Exception as e:
         logger.error("Error processing telegram webhook: %s", e)
         return JSONResponse(status_code=500, content={"ok": False, "error": "Internal processing error"})
-
-
-@router.get("/api/webhook/info")
-@router.get("/webhook/info")
-async def webhook_info(
-    authorization: Optional[str] = Header(None),
-    secret: Optional[str] = Query(None),
-    x_telegram_bot_api_secret_token: Optional[str] = Header(None),
-):
-    """Inspect current Telegram webhook status and allowed_updates configuration."""
-    _verify_webhook_auth(authorization, secret, x_telegram_bot_api_secret_token)
-    if not settings.TELEGRAM_BOT_TOKEN:
-        raise HTTPException(status_code=500, detail="TELEGRAM_BOT_TOKEN is not configured")
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getWebhookInfo"
-        resp = await client.get(url)
-        try:
-            return JSONResponse(status_code=resp.status_code, content=resp.json())
-        except Exception:
-            return Response(status_code=resp.status_code, content=resp.text)
-
-
-@router.get("/api/webhook/set")
-@router.post("/api/webhook/set")
-@router.get("/webhook/set")
-@router.post("/webhook/set")
-async def webhook_set(
-    request: Request,
-    authorization: Optional[str] = Header(None),
-    secret: Optional[str] = Query(None),
-    x_telegram_bot_api_secret_token: Optional[str] = Header(None),
-    url: Optional[str] = Query(None),
-    drop_pending_updates: bool = Query(False),
-):
-    """Configure or repair Telegram webhook with required allowed_updates."""
-    _verify_webhook_auth(authorization, secret, x_telegram_bot_api_secret_token)
-    if not settings.TELEGRAM_BOT_TOKEN:
-        raise HTTPException(status_code=500, detail="TELEGRAM_BOT_TOKEN is not configured")
-
-    target_url = url or settings.WEBHOOK_URL
-    if request.method == "POST":
-        try:
-            body = await request.json()
-            if isinstance(body, dict):
-                target_url = body.get("url") or target_url
-                if "drop_pending_updates" in body:
-                    drop_pending_updates = bool(body["drop_pending_updates"])
-        except Exception:
-            pass
-
-    if not target_url:
-        raise HTTPException(
-            status_code=400,
-            detail="WEBHOOK_URL is not configured in settings and no 'url' parameter was provided"
-        )
-
-    tg_payload: Dict[str, Any] = {
-        "url": target_url,
-        "allowed_updates": ALLOWED_TELEGRAM_UPDATES,
-        "drop_pending_updates": drop_pending_updates,
-    }
-    if settings.WEBHOOK_SECRET:
-        tg_payload["secret_token"] = settings.WEBHOOK_SECRET
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        api_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
-        resp = await client.post(api_url, json=tg_payload)
-        try:
-            return JSONResponse(status_code=resp.status_code, content=resp.json())
-        except Exception:
-            return Response(status_code=resp.status_code, content=resp.text)
 
 
 @router.get("/api/cron/news")
@@ -192,11 +160,12 @@ async def cron_news_checker(
         if token != settings.CRON_SECRET:
             raise HTTPException(status_code=403, detail="Invalid cron authorization secret")
 
-    app = get_telegram_app()
-    if not getattr(app, "_initialized", False):
-        await app.initialize()
+    app = await _prepare_telegram_app()
+    try:
+        sent_count = await check_and_broadcast_news(app.bot)
+    finally:
+        await _shutdown_telegram_app_requests(app)
 
-    sent_count = await check_and_broadcast_news(app.bot)
     repo = UsersRepository()
     deactivated = repo.deactivate_expired_users()
     return {
@@ -367,16 +336,23 @@ async def ai_trip_advisor(req: AIQueryRequest) -> AIQueryResponse:
 
 
 @router.get("/api/health")
-async def health_check():
+async def health_check(sync_webhook: bool = Query(False)):
     """Health check endpoint."""
     p_status = get_persistence_status()
-    return {
+    result: Dict[str, Any] = {
         "status": "healthy",
         "service": "fce-bot",
         "version": "2.0.0",
         "storage_backend": p_status["backend"],
         "permanent_storage": p_status["permanent"],
     }
+    if sync_webhook:
+        app = await _prepare_telegram_app()
+        try:
+            result["webhook"] = await _ensure_webhook_allowed_updates(app)
+        finally:
+            await _shutdown_telegram_app_requests(app)
+    return result
 
 
 # ==========================================

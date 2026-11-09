@@ -204,15 +204,12 @@ async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     payload = query.invoice_payload or ""
-    try:
-        if not payload.startswith("ai_sub:"):
-            await query.answer(ok=False, error_message="Ordine non valido o scaduto.")
-            return
+    if not payload.startswith("ai_sub:"):
+        await query.answer(ok=False, error_message="Ordine non valido o scaduto.")
+        return
 
-        # Everything verified, approve transaction
-        await query.answer(ok=True)
-    except Exception as e:
-        logger.debug("pre_checkout_handler query.answer suppressed (already answered or error): %s", e)
+    # Everything verified, approve transaction
+    await query.answer(ok=True)
 
 
 async def successful_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

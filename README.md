@@ -170,20 +170,8 @@ Il progetto è nativamente predisposto per essere distribuito su **Vercel**.
    ```bash
    curl -F "url=https://tuo-progetto.vercel.app/api/webhook" \
         -F "secret_token=la_tua_chiave_webhook_secret" \
-        -F "allowed_updates=[\"message\",\"callback_query\",\"pre_checkout_query\",\"my_chat_member\"]" \
+        -F "allowed_updates=[\"message\",\"edited_message\",\"callback_query\",\"pre_checkout_query\",\"my_chat_member\"]" \
         https://api.telegram.org/bot<TUO_TOKEN>/setWebhook
-   ```
-   *In alternativa puoi configurarlo via riga di comando o chiamando l'endpoint di configurazione protetto:*
-   ```bash
-   # Tramite CLI del progetto:
-   python main.py set-webhook --url https://tuo-progetto.vercel.app/api/webhook
-
-   # Tramite endpoint HTTP REST:
-   curl -X POST "https://tuo-progetto.vercel.app/api/webhook/set?secret=la_tua_chiave_webhook_secret"
-
-   # Per ispezionare la configurazione e gli allowed_updates attivi:
-   python main.py webhook-info
-   # oppure: curl "https://tuo-progetto.vercel.app/api/webhook/info?secret=la_tua_chiave_webhook_secret"
    ```
 5. Fatto! Il tuo bot risponderà istantaneamente e controllerà le notizie tramite Vercel Cron.
 
