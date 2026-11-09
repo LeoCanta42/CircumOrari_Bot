@@ -1,4 +1,4 @@
-# Modern Dockerfile for FCE Circumetnea Bot & Web API
+# Modern Dockerfile for CircumOrari Bot & Web API
 FROM python:3.11-slim as base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

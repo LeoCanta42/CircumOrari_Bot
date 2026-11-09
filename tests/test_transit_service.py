@@ -101,7 +101,7 @@ def test_similar_stop_name_catania_santa_sofia():
 
 
 def test_nearest_stops_and_address_landmark_resolution():
-    """Verify arbitrary places/addresses resolve to the nearest FCE stop with walking distance."""
+    """Verify arbitrary places/addresses resolve to the nearest stop with walking distance."""
     res = transit_service.resolve_location("Piazza Duomo Catania", allow_geocoding=True, allow_network_geocoding=False)
     assert res.match_kind == "nearest_place"
     assert res.nearest_distance_m is not None and res.nearest_distance_m < 1500

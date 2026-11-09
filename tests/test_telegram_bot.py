@@ -30,7 +30,7 @@ def test_help_text_markdown_syntax():
     assert "chat_id " not in HELP_TEXT
     # Check developer and repository references
     assert "LeoCanta42" in HELP_TEXT
-    assert "https://github.com/LeoCanta42/FCE_bot" in HELP_TEXT
+    assert "https://github.com/LeoCanta42/CircumOrari_Bot" in HELP_TEXT
     # Check that italic/bold markers don't leave hanging tags
     assert HELP_TEXT.count("*") % 2 == 0
 
@@ -111,7 +111,7 @@ async def test_start_command_callback_query():
     query.answer.assert_awaited_once()
     query.edit_message_text.assert_awaited_once()
     args, kwargs = query.edit_message_text.call_args
-    assert "Benvenuto su FCE Circumetnea Bot" in args[0]
+    assert "Benvenuto su CircumOrari Bot" in args[0]
 
 
 @pytest.mark.anyio
@@ -187,7 +187,7 @@ async def test_wizard_full_flow():
     # 10. Select hour
     query.data = "hour:08:00"
     await wizard_callback(update, context)
-    assert "Itinerari FCE trovati" in query.edit_message_text.call_args[0][0]
+    assert "Itinerari trovati" in query.edit_message_text.call_args[0][0]
 
 
 @pytest.mark.anyio
@@ -556,7 +556,7 @@ async def test_admin_username_management_and_panel_flow():
         admin_start_upd.channel_post = None
         await ai_message_handler(admin_start_upd, ctx)
         assert ctx.user_data.get("admin_state") is None
-        assert "Scheda Utente FCE Bot" in admin_msg.reply_text.call_args[0][0]
+        assert "Scheda Utente CircumOrari" in admin_msg.reply_text.call_args[0][0]
 
         # Interactive Broadcast prompt -> admin sends message in chat
         cb_query.data = "adm_broadcast_prompt"

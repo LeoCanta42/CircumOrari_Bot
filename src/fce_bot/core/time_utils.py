@@ -1,4 +1,4 @@
-"""Time and timezone utility helpers for FCE Bot."""
+"""Time and timezone utility helpers for CircumOrari Bot."""
 
 import logging
 import re

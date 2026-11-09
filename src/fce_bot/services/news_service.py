@@ -30,7 +30,7 @@ class NewsService:
         self.db_path = db_path
         self.rss_url = rss_url or settings.CIRCUMETNEA_RSS_URL
         self.headers = {
-            "User-Agent": "FCE-Bot/2.0 (+https://github.com/Leonardo0101/FCE_bot)"
+            "User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"
         }
 
     def fetch_news(self, limit: int = 10) -> List[NewsItem]:

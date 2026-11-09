@@ -11,8 +11,8 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="FCE Orari">
-    <meta name="application-name" content="FCE Orari">
+    <meta name="apple-mobile-web-app-title" content="CircumOrari">
+    <meta name="application-name" content="CircumOrari">
     
     <!-- Vector SVG Icon is preferred for sharp graphics on any device & resolution -->
     <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
@@ -920,7 +920,7 @@
     <nav class="navbar">
         <div class="nav-container">
             <a href="/" class="brand">
-                <img src="/static/icons/icon.svg" class="brand-logo" alt="FCE Orari Logo" width="36" height="36">
+                <img src="/static/icons/icon.svg" class="brand-logo" alt="CircumOrari Logo" width="36" height="36">
                 <div class="brand-text-container">
                     <span class="brand-title">Circumetnea Mobilità</span>
                     <span class="brand-sub">Ferrovia e Metro di Catania</span>
@@ -945,8 +945,8 @@
         <div class="modal-card" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div style="display:flex; align-items:center; gap:10px;">
-                    <img src="/static/icons/icon.svg" width="32" height="32" class="brand-logo" alt="FCE Logo">
-                    <h3 class="modal-title">Installa l'App FCE Orari</h3>
+                    <img src="/static/icons/icon.svg" width="32" height="32" class="brand-logo" alt="CircumOrari Logo">
+                    <h3 class="modal-title">Installa l'App CircumOrari</h3>
                 </div>
                 <button type="button" class="modal-close" onclick="closePwaModal()">&times;</button>
             </div>
@@ -978,7 +978,7 @@
             <!-- Transport Selection Filter -->
             <div class="transport-pills">
                 <button type="button" class="pill-btn active" data-mode="QUALSIASI" onclick="setTransportMode(this, 'QUALSIASI')">🚍 Tutti i Mezzi</button>
-                <button type="button" class="pill-btn" data-mode="TRENO" onclick="setTransportMode(this, 'TRENO')">🚆 Treni FCE</button>
+                <button type="button" class="pill-btn" data-mode="TRENO" onclick="setTransportMode(this, 'TRENO')">🚆 Treni</button>
                 <button type="button" class="pill-btn" data-mode="METRO" onclick="setTransportMode(this, 'METRO')">🚇 Metropolitana</button>
                 <button type="button" class="pill-btn" data-mode="BUS" onclick="setTransportMode(this, 'BUS')">🚌 Autolinee Bus</button>
             </div>
@@ -1106,7 +1106,7 @@
                         <span class="doc-icon">🚌</span>
                         <div>
                             <div>Orario Autolinee (Bus)</div>
-                            <span class="doc-tag">Linee extraurbane FCE</span>
+                            <span class="doc-tag">Linee extraurbane</span>
                         </div>
                     </div>
                     <span>⬇️</span>
@@ -1132,15 +1132,15 @@
 
     <!-- Footer -->
     <footer>
-        <div>Ferrovia Circumetnea (FCE) &bull; Dati ufficiali del Trasporto Pubblico Locale</div>
+        <div>CircumOrari &bull; Dati ufficiali del Trasporto Pubblico Locale</div>
         <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">
             🔒 <b>Privacy & Trasparenza (GDPR):</b> Questo portale web non utilizza cookie di profilazione o tracciamento e non memorizza dati personali.
         </div>
         <div class="footer-links">
             <a href="https://www.circumetnea.it" target="_blank">Sito Ufficiale Circumetnea</a>
             <a href="https://eticketing.circumetnea.it" target="_blank">Acquisto Titoli Online</a>
-            <a href="https://t.me/fce_app_bot" target="_blank">Bot Telegram (@fce_app_bot)</a>
-            <a href="https://github.com/LeoCanta42/FCE_bot" target="_blank">GitHub (Dev: LeoCanta42)</a>
+            <a href="https://t.me/circumorari_bot" target="_blank">Bot Telegram (@circumorari_bot)</a>
+            <a href="https://github.com/LeoCanta42/CircumOrari_Bot" target="_blank">GitHub (Dev: LeoCanta42)</a>
         </div>
     </footer>
 
@@ -1152,7 +1152,7 @@
             'QUALSIASI': '🌐 Ricerca attiva su tutta la rete Circumetnea (Treni, Metro e Bus).',
             'TRENO': '🚆 <b>Treni di superficie:</b> tratta Catania Borgo ⇄ Paternò ⇄ Adrano ⇄ Randazzo ⇄ Riposto.',
             'METRO': '🚇 <b>Metropolitana di Catania:</b> tratta urbana sotterranea Monte Po ⇄ Stesicoro (12 stazioni).',
-            'BUS': "🚌 <b>Autolinee FCE:</b> collegamenti extraurbani su gomma nell'area etnea."
+            'BUS': "🚌 <b>Autolinee:</b> collegamenti extraurbani su gomma nell'area etnea."
         };
 
         // Escape HTML to prevent XSS
@@ -1523,7 +1523,7 @@
 
                 if (!data.itineraries || data.itineraries.length === 0) {
                     const modeDesc = currentMode === 'METRO' ? ' per la Metropolitana' : 
-                                    (currentMode === 'TRENO' ? ' per i Treni FCE' : 
+                                    (currentMode === 'TRENO' ? ' per i Treni' : 
                                     (currentMode === 'BUS' ? ' per le Autolinee Bus' : ''));
                     header.innerText = 'Nessuna corsa trovata per ' + origin + ' ➔ ' + dest + modeDesc;
                     list.innerHTML = '<p style="color:var(--text-muted); font-size:0.92rem; padding:10px 0;">' +
@@ -1558,7 +1558,7 @@
                     const firstSeg = it.segments[0] || {};
                     const isDirect = it.direct;
                     const routeTag = firstSeg.route ? ' (' + escapeHtml(firstSeg.route) + ')' : '';
-                    const modeLabel = firstSeg.type === 'TRENO' ? '🚆 Treno FCE' + routeTag : (firstSeg.type === 'METRO' ? '🚇 Metropolitana' : '🚌 Bus Autolinee' + routeTag);
+                    const modeLabel = firstSeg.type === 'TRENO' ? '🚆 Treno' + routeTag : (firstSeg.type === 'METRO' ? '🚇 Metropolitana' : '🚌 Bus Autolinee' + routeTag);
                     const headsign = firstSeg.headsign ? 'Direzione: ' + escapeHtml(firstSeg.headsign) : '';
 
                     html += '<div class="itinerary-card">';
@@ -1679,7 +1679,7 @@
 
                 let html = '';
                 news.forEach(item => {
-                    const title = escapeHtml(item.title || 'Avviso FCE');
+                    const title = escapeHtml(item.title || 'Avviso di Servizio');
                     const link = (item.link && (item.link.startsWith('http://') || item.link.startsWith('https://'))) ? item.link : '#';
                     const date = escapeHtml(item.published_date || '');
                     html += '<div class="news-item">';
@@ -1721,7 +1721,7 @@
         window.addEventListener('appinstalled', () => {
             deferredPrompt = null;
             document.querySelectorAll('.pwa-install-trigger').forEach(el => el.style.display = 'none');
-            console.log('FCE PWA successfully installed on device');
+            console.log('CircumOrari PWA successfully installed on device');
         });
 
         async function promptPWAInstall() {
@@ -1745,7 +1745,7 @@
             const body = document.getElementById('modalInstructions');
 
             if (isStandalone) {
-                body.innerHTML = '<p>🎉 L\'applicazione <strong>FCE Orari</strong> è già installata sul tuo dispositivo ed è attiva in modalità autonoma!</p>';
+                body.innerHTML = '<p>🎉 L\'applicazione <strong>CircumOrari</strong> è già installata sul tuo dispositivo ed è attiva in modalità autonoma!</p>';
             } else if (isIOS) {
                 body.innerHTML = `
                     <div class="modal-step">
@@ -1758,7 +1758,7 @@
                     </div>
                     <div class="modal-step">
                         <span class="step-num">3</span>
-                        <div>Tocca <strong>Aggiungi</strong> in alto a destra: troverai l'icona FCE tra le tue app, pronta all'uso!</div>
+                        <div>Tocca <strong>Aggiungi</strong> in alto a destra: troverai l'icona CircumOrari tra le tue app, pronta all'uso!</div>
                     </div>
                 `;
             } else {

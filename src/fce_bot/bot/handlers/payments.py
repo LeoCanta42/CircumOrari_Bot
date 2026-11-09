@@ -30,7 +30,7 @@ async def send_subscription_invoice(update: Update, context: ContextTypes.DEFAUL
 
     title = f"Abbonamento Assistente AI ({sub_days}gg)"
     description = (
-        f"Accesso illimitato per {sub_days} giorni all'Assistente AI FCE per orari e percorsi. "
+        f"Accesso illimitato per {sub_days} giorni all'Assistente AI CircumOrari per orari e percorsi. "
         f"Nessun rinnovo automatico a sorpresa. Costo: {cost_label}."
     )
     payload = f"ai_sub:{chat.id}:{int(time.time())}"
@@ -168,7 +168,7 @@ async def ai_sub_info_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         exp_str = "Accesso Illimitato (Admin)"
 
     info_text = (
-        "ℹ️ *Informazioni Abbonamento & Privacy AI FCE*\n\n"
+        "ℹ️ *Informazioni Abbonamento & Privacy Assistente AI*\n\n"
         f"• *Costo:* {price_display} ogni {sub_days} giorni.\n"
         f"• *Durata:* Il mese è calcolato in {sub_days} giorni solari effettivi dalla data di pagamento.\n"
         f"• *Prova Gratuita:* 1 sola volta per utente ({trial_days} giorni).\n"
@@ -276,7 +276,7 @@ async def abbonamento_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
     else:
         text = (
-            "🤖 *Abbonamento Assistente AI FCE*\n\n"
+            "🤖 *Abbonamento Assistente AI CircumOrari*\n\n"
             f"Attiva l'accesso per {sub_days} giorni a soli *{price_display}*.\n"
             "Nessun vincolo, nessun rinnovo automatico."
         )

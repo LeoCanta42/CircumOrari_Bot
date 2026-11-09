@@ -14,11 +14,11 @@ ACTION="${1:-all}"
 
 case "$ACTION" in
     bot)
-        echo "🚀 Starting FCE Telegram Bot (polling mode)..."
+        echo "🚀 Starting CircumOrari Telegram Bot (polling mode)..."
         exec python main.py bot
         ;;
     web)
-        echo "🌐 Starting FCE Web & REST API..."
+        echo "🌐 Starting CircumOrari Web & REST API..."
         exec python main.py serve --host 0.0.0.0 --port 8000
         ;;
     news)
@@ -30,7 +30,7 @@ case "$ACTION" in
         exec python main.py sync-gtfs
         ;;
     all)
-        echo "🚀 Starting FCE Bot and News daemon..."
+        echo "🚀 Starting CircumOrari Bot and News daemon..."
         python main.py news-worker &
         PID_NEWS=$!
         python main.py bot &

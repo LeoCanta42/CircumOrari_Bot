@@ -20,7 +20,7 @@ class DocumentsService:
     def __init__(self, base_url: str = None):
         self.url = base_url or settings.CIRCUMETNEA_LINES_URL
         self.headers = {
-            "User-Agent": "FCE-Bot/2.0 (+https://github.com/Leonardo0101/FCE_bot)"
+            "User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"
         }
 
     def get_documents(self) -> DocumentsInfo:

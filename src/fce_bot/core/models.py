@@ -1,4 +1,4 @@
-"""Domain models and data schemas for FCE Bot."""
+"""Domain models and data schemas for CircumOrari Bot."""
 
 import re
 from dataclasses import dataclass, field
@@ -314,7 +314,7 @@ class NewsItem(BaseModel):
             text += f"📅 _{date_str}_\n"
         if summary:
             text += f"\n{summary}\n"
-        text += f"\n🔗 [Leggi sul sito FCE]({self.link})"
+        text += f"\n🔗 [Leggi sul sito ufficiale]({self.link})"
         return text
 
 

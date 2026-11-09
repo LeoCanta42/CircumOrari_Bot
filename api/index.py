@@ -17,8 +17,8 @@ from fce_bot.config import settings
 from fce_bot.api.router import router
 
 app = FastAPI(
-    title="Ferrovia Circumetnea (FCE) Transit & Bot API",
-    description="Official GTFS transit schedule API, Telegram Webhook, News service and AI trip planner for FCE.",
+    title="CircumOrari Transit & Bot API",
+    description="Official GTFS transit schedule API, Telegram Webhook, News service and AI trip planner.",
     version="2.0.0",
 )
 

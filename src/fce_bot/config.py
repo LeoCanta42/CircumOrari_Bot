@@ -1,4 +1,4 @@
-"""Configuration management for FCE Bot using pydantic-settings."""
+"""Configuration management for CircumOrari Bot using pydantic-settings."""
 
 import os
 from pathlib import Path
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     )
 
     # Project metadata
-    PROJECT_NAME: str = "FCE Circumetnea Bot"
+    PROJECT_NAME: str = "CircumOrari Bot"
     DEBUG: bool = False
     BASE_DIR: Path = BASE_DIR
 

@@ -1,4 +1,4 @@
-// FCE Circumetnea & Metro PWA Service Worker
+// CircumOrari & Metro PWA Service Worker
 const CACHE_NAME = 'fce-pwa-v1';
 const PRECACHE_URLS = [
     '/',

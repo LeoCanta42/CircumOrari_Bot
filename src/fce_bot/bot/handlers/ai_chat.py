@@ -208,7 +208,7 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         sub_info = "🟢 *Stato Accesso:* Abilitato"
 
     help_msg = (
-        "🤖 *Assistente AI per la Mobilità FCE*\n\n"
+        "🤖 *Assistente AI per la Mobilità*\n\n"
         f"{sub_info}\n\n"
         "Non serve cliccare decine di pulsanti! Puoi scrivermi qualsiasi domanda come se parlassi con una persona reale.\n\n"
         "💬 *Esempi di domande che puoi fare:*\n"

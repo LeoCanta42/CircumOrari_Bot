@@ -6,6 +6,12 @@ from fce_bot.services.ai_service import ai_service
 from fce_bot.data.db import normalize_stop_name
 
 
+@pytest.fixture(autouse=True)
+def isolate_ai_settings(monkeypatch):
+    """Ensure tests in this module run offline without live LLM calls."""
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+
+
 def test_extract_entities_standard_format():
     """Verify origin, destination, and time extraction."""
     text = "Come posso andare da Paterno a Randazzo alle 14:30 in treno?"
@@ -26,8 +32,9 @@ def test_extract_entities_metro():
     assert ttype == TransportType.METRO
 
 
-def test_ai_answer_query():
+def test_ai_answer_query(monkeypatch):
     """Verify answer generation with factual itineraries."""
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
     text = "Da Paterno a Randazzo alle 08:30"
     resp = ai_service.answer_query(text)
     assert resp.origin is not None
@@ -38,7 +45,7 @@ def test_ai_answer_query():
 
 def test_ai_ticket_query():
     """Verify ticket purchase inquiry returns clean text without markdown link artifacts."""
-    resp = ai_service.answer_query("Dove posso acquistare i biglietti FCE?")
+    resp = ai_service.answer_query("Dove posso acquistare i biglietti?")
     assert len(resp.answer) > 20
     # Should not contain raw markdown link brackets like [Orari Metro](http...)
     assert "](" not in resp.answer
@@ -85,7 +92,7 @@ def test_ai_imprecise_stop_catania_santa_sofia(monkeypatch):
 
 
 def test_ai_landmark_nearest_stop_query(monkeypatch):
-    """Verify AI trip assistant resolves places/addresses to the nearest FCE stop and computes the route."""
+    """Verify AI trip assistant resolves places/addresses to the nearest stop and computes the route."""
     monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
     resp = ai_service.answer_query("Come arrivo da Piazza Duomo Catania a Paternò alle 09:00?")
     assert resp.itineraries_count > 0

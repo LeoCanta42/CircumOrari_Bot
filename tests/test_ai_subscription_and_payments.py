@@ -424,7 +424,7 @@ async def test_admin_ai_test_mode_toggle_and_buying(monkeypatch):
         msg_abbonamento.reply_text.assert_awaited_once()
         reply_text = msg_abbonamento.reply_text.call_args[0][0]
         # Should show the subscription offer, NOT "Account Amministratore già permanente"
-        assert "Abbonamento Assistente AI FCE" in reply_text
+        assert "Abbonamento Assistente AI CircumOrari" in reply_text
         assert "Account Amministratore" not in reply_text
 
         # 4. Admin simulates purchasing 1 Telegram Star

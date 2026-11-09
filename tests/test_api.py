@@ -266,7 +266,7 @@ def test_telegram_webhook_pre_checkout_and_event_loop_isolation():
             seen_clients.append(self_bot._request[0]._client)
             api_calls.append((endpoint, data))
             if endpoint == "getMe":
-                return {"id": 123456, "is_bot": True, "first_name": "FCE Bot", "username": "fce_bot"}
+                return {"id": 123456, "is_bot": True, "first_name": "CircumOrari Bot", "username": "circumorari_bot"}
             if endpoint == "sendInvoice":
                 return {
                     "message_id": 101,

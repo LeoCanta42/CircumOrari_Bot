@@ -18,7 +18,7 @@ def format_news_digest(articles) -> str:
         return "Al momento non ci sono notizie o avvisi recenti pubblicati da Circumetnea."
 
     number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
-    lines = ["📢 *Ultime Notizie & Avvisi Ufficiali FCE*\n"]
+    lines = ["📢 *Ultime Notizie & Avvisi Ufficiali*\n"]
 
     for idx, item in enumerate(articles):
         num = number_emojis[idx] if idx < len(number_emojis) else f"{idx + 1}."
@@ -104,7 +104,7 @@ async def news_sub_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
     status_str = "🟢 *Iscritto (ricevi gli avvisi di servizio)*" if is_sub else "🔴 *Non iscritto (nessun avviso inviato)*"
 
     text = (
-        "🔔 *Gestione Notifiche & Avvisi FCE*\n\n"
+        "🔔 *Gestione Notifiche & Avvisi*\n\n"
         "Desideri ricevere automaticamente su Telegram gli avvisi in tempo reale su scioperi, modifiche orari e deviazioni delle linee Circumetnea e Metro?\n\n"
         f"📌 *Stato attuale:* {status_str}\n\n"
         "L'iscrizione è libera e richiede il tuo consenso esplicito (GDPR). Nessuna notifica viene inviata senza la tua richiesta manuale."
@@ -189,7 +189,7 @@ async def iscriviti_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
     await update.effective_message.reply_text(
         "✅ *Iscrizione agli avvisi completata!*\n\n"
-        "Riceverai notifiche su scioperi e variazioni orari FCE.\n"
+        "Riceverai notifiche su scioperi e variazioni orari.\n"
         "Per disattivare in futuro: /disiscriviti",
         reply_markup=subscription_manage_keyboard(is_subscribed=True),
         parse_mode="Markdown"

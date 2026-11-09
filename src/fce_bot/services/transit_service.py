@@ -571,7 +571,7 @@ class TransitService:
                 resolved_label=matched_stops[0].display_name,
             )
 
-        # Stage 3: Address / Landmark Geocoding -> Nearest FCE Stops
+        # Stage 3: Address / Landmark Geocoding -> Nearest Stops
         if allow_geocoding:
             geo = geocode_place_in_etna_area(name_or_query, allow_network=allow_network_geocoding)
             if geo:

@@ -204,7 +204,7 @@ async def cron_cleanup_task(
 
 @router.get("/api/cities")
 async def list_cities(type: Optional[str] = None):
-    """List municipalities (Comuni) served by FCE with stop counts."""
+    """List municipalities (Comuni) served with stop counts."""
     ttype = TransportType.from_str(type) if type else TransportType.QUALSIASI
     return transit_service.get_cities(ttype)
 
@@ -370,7 +370,7 @@ async def web_manifest():
     """Serve PWA Web App Manifest prioritizing crisp vector SVG graphics."""
     manifest_data = {
         "name": "Ferrovia Circumetnea & Metro",
-        "short_name": "FCE Orari",
+        "short_name": "CircumOrari",
         "description": "Orari ufficiali, itinerari e avvisi di servizio per Ferrovia Circumetnea e Metropolitana di Catania",
         "start_url": "/",
         "scope": "/",

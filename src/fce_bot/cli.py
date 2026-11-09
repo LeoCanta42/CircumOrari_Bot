@@ -1,4 +1,4 @@
-"""Command-line interface for FCE Bot operations."""
+"""Command-line interface for CircumOrari Bot operations."""
 
 import sys
 import argparse
@@ -22,7 +22,7 @@ def run_bot() -> None:
         logger.error("TELEGRAM_BOT_TOKEN is not configured! Please set it in .env")
         sys.exit(1)
 
-    logger.info("Starting FCE Telegram Bot in polling mode...")
+    logger.info("Starting CircumOrari Telegram Bot in polling mode...")
     app = create_bot_application()
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
@@ -92,7 +92,7 @@ def show_stats() -> None:
         st = cur.execute("SELECT count(*) FROM stop_times").fetchone()[0]
         routes = cur.execute("SELECT count(*) FROM routes").fetchone()[0]
 
-    print("=== FCE Bot System Statistics ===")
+    print("=== CircumOrari Bot System Statistics ===")
     print(f"Storage Backend:    {p_status['label']}")
     print(f"Users Total:        {stats['total_users']}")
     print(f"Subscribed Users:   {stats['subscribed_users']}")
@@ -105,7 +105,7 @@ def show_stats() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="FCE Circumetnea Bot CLI")
+    parser = argparse.ArgumentParser(description="CircumOrari Bot CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     subparsers.add_parser("bot", help="Run Telegram bot in polling mode")

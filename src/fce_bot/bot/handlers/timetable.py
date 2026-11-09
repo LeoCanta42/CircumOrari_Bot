@@ -47,7 +47,7 @@ async def fermate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         cities = transit_service.get_cities()
         city_list = ", ".join(f"_{c['city']}_ ({c['count']})" for c in cities[:25])
         msg = (
-            "🚉 *Ricerca Fermate e Comuni FCE*\n\n"
+            "🚉 *Ricerca Fermate e Comuni*\n\n"
             "Puoi cercare una fermata per *nome*, *nome simile* o *Comune*:\n"
             "• `/fermate Catania`\n"
             "• `/fermate Santa Sofia`\n"
@@ -618,7 +618,7 @@ async def wizard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         result_header = (
-            f"🚉 *Itinerari FCE trovati*\n"
+            f"🚉 *Itinerari trovati*\n"
             f"Da: *{dep_name}*\n"
             f"A: *{arr_name}*\n"
             f"Filtro: `{chosen_hour}`\n\n"

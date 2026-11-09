@@ -6,7 +6,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "🔄 Resetting FCE Bot database and caches..."
+echo "🔄 Resetting CircumOrari Bot database and caches..."
 
 # Remove old databases if needed
 rm -f fce_lines.db users.db

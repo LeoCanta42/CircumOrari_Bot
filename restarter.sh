@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Safe process manager for FCE Bot
+# Safe process manager for CircumOrari Bot
 
 set -e
 
@@ -13,7 +13,7 @@ stop_bot() {
     if [ -f "$PID_FILE" ]; then
         PID=$(cat "$PID_FILE")
         if kill -0 "$PID" 2>/dev/null; then
-            echo "🛑 Stopping FCE Bot process (PID: $PID)..."
+            echo "🛑 Stopping CircumOrari Bot process (PID: $PID)..."
             kill "$PID" || true
             sleep 1
         fi
@@ -34,10 +34,10 @@ start_bot() {
         source .venv/bin/activate
     fi
 
-    echo "🚀 Starting FCE Bot in background..."
+    echo "🚀 Starting CircumOrari Bot in background..."
     nohup python main.py bot > bot.log 2>&1 &
     echo $! > "$PID_FILE"
-    echo "✅ FCE Bot started with PID $(cat "$PID_FILE") (logs in bot.log)"
+    echo "✅ CircumOrari Bot started with PID $(cat "$PID_FILE") (logs in bot.log)"
 }
 
 case "$ACTION" in
@@ -54,9 +54,9 @@ case "$ACTION" in
         ;;
     status)
         if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-            echo "🟢 FCE Bot is RUNNING (PID: $(cat "$PID_FILE"))"
+            echo "🟢 CircumOrari Bot is RUNNING (PID: $(cat "$PID_FILE"))"
         else
-            echo "🔴 FCE Bot is STOPPED"
+            echo "🔴 CircumOrari Bot is STOPPED"
         fi
         ;;
     *)

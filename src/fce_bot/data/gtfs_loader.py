@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def classify_route_transport(route_id: str, short_name: str, long_name: str) -> TransportType:
-    """Classify FCE route into METRO, TRENO (superficie / littorina), or BUS."""
+    """Classify transit route into METRO, TRENO (superficie / littorina), or BUS."""
     s_name = (short_name or "").upper()
     l_name = (long_name or "").upper()
 
@@ -171,7 +171,7 @@ def download_and_sync_gtfs(feed_url: Optional[str] = None, db_path: Optional[Pat
     """Download latest official GTFS feed from circumetnea.it and sync SQLite."""
     url = feed_url or settings.CIRCUMETNEA_GTFS_URL
     logger.info("Downloading GTFS feed from %s...", url)
-    headers = {"User-Agent": "FCE-Bot/2.0 (+https://github.com/Leonardo0101/FCE_bot)"}
+    headers = {"User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"}
     resp = requests.get(url, headers=headers, timeout=60)
     resp.raise_for_status()
 

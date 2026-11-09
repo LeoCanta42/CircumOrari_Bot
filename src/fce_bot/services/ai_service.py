@@ -24,15 +24,15 @@ from fce_bot.services.transit_service import LocationResolution, transit_service
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """Sei l'assistente virtuale ufficiale della Ferrovia Circumetnea (FCE) e Metropolitana di Catania.
+SYSTEM_PROMPT = """Sei l'assistente virtuale per la mobilità CircumOrari (Ferrovia Circumetnea e Metropolitana di Catania).
 Il tuo compito è aiutare i viaggiatori a pianificare i loro spostamenti, indicando gli orari corretti, le fermate di partenza e arrivo (anche quando il passeggero scrive un nome approssimativo, un indirizzo o un luogo di interesse), il percorso delle linee e le informazioni su biglietti e documenti.
 REGOLE FONDAMENTALI DI RISPOSTA:
 1. Rispondi sempre in lingua italiana, in modo cordiale, chiaro e naturale.
 3. Se la fermata indicata dall'utente aveva un nome simile ma non identico (es. "Catania Santa Sofia" -> "Parcheggio Santa Sofia"), segnala cortesemente quale fermata reale hai utilizzato.
-4. Se l'utente ha indicato un indirizzo o un luogo generico (es. Piazza Duomo, Via Etnea, Policlinico), indica chiaramente la fermata FCE più vicina e la relativa distanza indicativa a piedi, spiegando il percorso trovato.
+4. Se l'utente ha indicato un indirizzo o un luogo generico (es. Piazza Duomo, Via Etnea, Policlinico), indica chiaramente la fermata più vicina e la relativa distanza indicativa a piedi, spiegando il percorso trovato.
 5. Quando utile o richiesto, indica anche le fermate intermedie attraversate dalla linea lungo il tragitto.
 6. Se l'utente chiede informazioni su orari completi o documenti, dì semplicemente: "Puoi consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata o sul sito circumetnea.it".
-7. Per i biglietti, indica che si possono acquistare nelle stazioni, alle emettitrici automatiche della metropolitana, nelle rivendite autorizzate (tabaccherie/edicole) e online tramite l'app ufficiale FCE o DropTicket.
+7. Per i biglietti, indica che si possono acquistare nelle stazioni, alle emettitrici automatiche della metropolitana, nelle rivendite autorizzate (tabaccherie/edicole) e online tramite app o DropTicket.
 8. Evita sintassi markdown complessa o asterischi multipli sparsi. Basa orari e percorsi esclusivamente sui dati ufficiali forniti nel contesto.
 """
 
@@ -101,7 +101,7 @@ class AIService:
             return None
         c = name.strip()
         c = re.sub(
-            r"^(?:la\s+stazione\s+di|stazione\s+di|la\s+fermata\s+di|fermata\s+di|stazione|fermata|il\s+comune\s+di|comune\s+di|la\s+città\s+di|vicino\s+a|nei\s+pressi\s+di)\s+",
+            r"^(?:(?:ad\s+)?(?:essere|arrivare|andare)\s+(?:a|ad|in)\s+|la\s+stazione\s+di|stazione\s+di|la\s+fermata\s+di|fermata\s+di|stazione|fermata|il\s+comune\s+di|comune\s+di|la\s+città\s+di|vicino\s+a|nei\s+pressi\s+di)\s+",
             "",
             c,
             flags=re.I,
@@ -218,7 +218,7 @@ class AIService:
         stop_kw = rf"(?:\s+{TIME_DELIMITERS_PATTERN}|\?|\.|!|$)"
 
         pat1 = re.search(
-            rf"\b(?:da|dal|dalla|partendo\s+da)\s+({loc_chars}?)\s+(?:a|ad|al|allo|alla|in|verso|per|fino\s+a)\s+({loc_chars}?){stop_kw}",
+            rf"\b(?:da|dal|dalla|partendo\s+da)\s+({loc_chars}?)\s+(?:a|ad|al|allo|alla|in|verso|per(?!\s+(?:le\s+)?\d)\b|fino\s+a)\s+({loc_chars}?){stop_kw}",
             text,
             re.IGNORECASE,
         )
@@ -228,7 +228,7 @@ class AIService:
 
         if not origin or not destination:
             pat2 = re.search(
-                rf"\b(?:per|ad|a|al|alla|in|verso|arrivare\s+a|arrivare\s+in|essere\s+a|essere\s+in)\s+({loc_chars}?)\s+(?:da|dal|dalla|partendo\s+da)\s+({loc_chars}?){stop_kw}",
+                rf"\b(?:(?:ad\s+)?(?:arrivare|essere|andare)\s+(?:a|ad|in)|per|ad|a|al|allo|alla|in|verso)\s+({loc_chars}?)\s+(?:da|dal|dalla|partendo\s+da)\s+({loc_chars}?){stop_kw}",
                 text,
                 re.IGNORECASE,
             )
@@ -322,7 +322,7 @@ class AIService:
                 for s in res.matched_stops[:3]
             )
             return (
-                f"{role_label}: per il luogo/indirizzo \"{res.resolved_label}\" le fermate FCE più vicine sono: "
+                f"{role_label}: per il luogo/indirizzo \"{res.resolved_label}\" le fermate più vicine sono: "
                 f"{stops_desc}."
             )
         return ""
@@ -542,7 +542,7 @@ class AIService:
                 "I biglietti e gli abbonamenti della Ferrovia Circumetnea e della Metropolitana di Catania sono acquistabili:\n\n"
                 "• Presso le biglietterie di stazione e le rivendite autorizzate (tabacchi ed edicole convenzionate).\n"
                 "• Alle emettitrici automatiche attive in tutte le stazioni della metropolitana.\n"
-                "• Tramite smartphone con l'app ufficiale FCE Catania o l'app DropTicket.\n"
+                "• Tramite smartphone con l'app ufficiale o l'app DropTicket.\n"
                 "• A bordo per le corse dei bus extraurbani (ove previsto).\n\n"
                 "Puoi consultare e scaricare gli orari aggiornati ufficiali nella sezione dedicata."
             )
@@ -550,7 +550,7 @@ class AIService:
         # Nearest stop to a place/address
         if nearest_only_res and nearest_only_res.matched_stops:
             lines = [
-                f"📍 Fermate FCE più vicine a {nearest_only_res.resolved_label or nearest_only_res.raw_query}:\n"
+                f"📍 Fermate più vicine a {nearest_only_res.resolved_label or nearest_only_res.raw_query}:\n"
             ]
             for s in nearest_only_res.matched_stops[:5]:
                 modes = []

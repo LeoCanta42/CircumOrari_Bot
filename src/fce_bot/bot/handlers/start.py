@@ -10,7 +10,7 @@ from fce_bot.data.users_repo import UsersRepository
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()
 
-WELCOME_TEXT = """🌋 *Benvenuto su FCE Circumetnea Bot!*
+WELCOME_TEXT = """🌋 *Benvenuto su CircumOrari Bot!*
 
 Il tuo assistente completo per gli orari e la mobilità della **Ferrovia Circumetnea** e **Metropolitana di Catania**.
 
@@ -18,7 +18,7 @@ Cosa puoi fare:
 • 🔍 *Cerca Linea / Orari:* wizard guidato per trovare corse dirette o con cambio.
 • 🤖 *Assistente AI:* scrivi una frase qualsiasi in chat (es. _"Come vado da Catania a Bronte alle 14?"_) per ricevere subito una risposta intelligente!
 • 📢 *Ultime Notizie:* avvisi in tempo reale su scioperi, modifiche e orari.
-• 📄 *Documenti:* link ufficiali aggiornati ai PDF degli orari FCE.
+• 📄 *Documenti:* link ufficiali aggiornati ai PDF degli orari.
 
 Scegli un'opzione dal menu sottostante:"""
 
@@ -48,7 +48,7 @@ Quando utilizzi il bot, vengono memorizzati `chat_id`, eventuale `@username`, no
 
 👨‍💻 *Sviluppatore & Progetto:*
 Creato e sviluppato da *LeoCanta42*.
-Progetto open-source disponibile su [GitHub](https://github.com/LeoCanta42/FCE_bot)."""
+Progetto open-source disponibile su [GitHub](https://github.com/LeoCanta42/CircumOrari_Bot)."""
 
 
 PRIVACY_TEXT = """🔒 *Informativa sulla Privacy & GDPR (Regolamento UE 2016/679)*

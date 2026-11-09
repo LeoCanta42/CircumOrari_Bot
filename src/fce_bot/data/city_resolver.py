@@ -206,7 +206,7 @@ def resolve_city_by_coords(lat: float, lon: float, allow_network: bool = False) 
             resp = requests.get(
                 "https://nominatim.openstreetmap.org/reverse",
                 params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 10, "accept-language": "it"},
-                headers={"User-Agent": "FCE-Bot/2.0 (+https://github.com/LeoCanta42/FCE_bot)"},
+                headers={"User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"},
                 timeout=4,
             )
             if resp.status_code == 200:
@@ -310,7 +310,7 @@ def geocode_place_in_etna_area(
     if not has_city_hint:
         candidate_queries.insert(0, f"{place_query.strip()}, Provincia di Catania, Sicilia, Italia")
 
-    headers = {"User-Agent": "FCE-Bot/2.0 (+https://github.com/LeoCanta42/FCE_bot)"}
+    headers = {"User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"}
     for q_str in candidate_queries:
         try:
             resp = requests.get(

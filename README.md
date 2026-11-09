@@ -1,4 +1,4 @@
-# 🌋 Ferrovia Circumetnea (FCE) Bot & Transit API
+# 🌋 CircumOrari Bot & Transit API
 
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg)](https://fastapi.tiangolo.com/)
@@ -6,9 +6,9 @@
 [![Vercel Ready](https://img.shields.io/badge/Vercel-Serverless%20%26%20Cron-black.svg)](https://vercel.com/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-Un assistente di viaggio moderno, modulare e completo per la **Ferrovia Circumetnea (FCE)** e la **Metropolitana di Catania**.
+Un assistente di viaggio moderno, modulare e completo per la **Ferrovia Circumetnea** e la **Metropolitana di Catania**.
 
-Questo progetto è una riscrittura completa e architetturale del bot originale: ora utilizza i dati aperti ufficiali in formato standard **GTFS (General Transit Feed Specification)** pubblicati da FCE, integra feed **RSS 2.0** per le notizie e gli avvisi in tempo reale, offre un **assistente AI** in linguaggio naturale (compatibile con Google Gemini e OpenAI), include una **Web Dashboard / REST API** ed è nativamente deployabile come funzione serverless su **Vercel** o come container **Docker** su qualsiasi VPS.
+Questo progetto è una riscrittura completa e architetturale del bot originale: ora utilizza i dati aperti ufficiali in formato standard **GTFS (General Transit Feed Specification)**, integra feed **RSS 2.0** per le notizie e gli avvisi in tempo reale, offre un **assistente AI** in linguaggio naturale (compatibile con Google Gemini e OpenAI), include una **Web Dashboard / REST API** ed è nativamente deployabile come funzione serverless su **Vercel** o come container **Docker** su qualsiasi VPS.
 
 ---
 
@@ -38,7 +38,7 @@ Questo progetto è una riscrittura completa e architetturale del bot originale: 
 ## 🏗️ Architettura del Progetto
 
 ```
-FCE_bot/
+CircumOrari_Bot/
 ├── api/                          # Entry point per Vercel Serverless Functions
 │   └── index.py                  # Inizializzazione FastAPI (Webhook, Cron, REST API)
 ├── src/
@@ -79,8 +79,8 @@ Assicurati di avere Python 3.10 o successivo installato.
 
 ```bash
 # Clona il repository
-git clone https://github.com/LeoCanta42/FCE_bot.git
-cd FCE_bot
+git clone https://github.com/LeoCanta42/CircumOrari_Bot.git
+cd CircumOrari_Bot
 
 # Crea ed attiva l'ambiente virtuale
 python3 -m venv .venv
@@ -197,7 +197,7 @@ docker-compose logs -f
 |---|---|
 | `/start` | Mostra il menu principale e inizializza la sessione |
 | `/viaggio <origine> - <destinazione> [ora]` | Scorciatoia rapida per cercare orari senza pulsanti |
-| `/fermate <query>` | Cerca fermate o stazioni della rete FCE |
+| `/fermate <query>` | Cerca fermate o stazioni della rete |
 | `/news` | Mostra le ultime 3 notizie/avvisi ufficiali Circumetnea |
 | `/abbonamento` | Verifica stato, prova gratuita (3gg) o attiva l'abbonamento mensile (30gg a 50 ⭐ / ~1€) |
 | `/documenti` | Link diretti per scaricare i PDF ufficiali (Metro, Treni, Bus) |

@@ -1,4 +1,4 @@
-"""Main entry point for running FCE Bot."""
+"""Main entry point for running CircumOrari Bot."""
 
 import sys
 from pathlib import Path

@@ -97,7 +97,7 @@ async def track_user_interaction(update: Update, context: ContextTypes.DEFAULT_T
 PUBLIC_BOT_COMMANDS = [
     BotCommand("start", "Menu principale e calcolo viaggio"),
     BotCommand("viaggio", "Cerca corsa (es. /viaggio Catania - Bronte)"),
-    BotCommand("fermate", "Cerca stazioni e fermate FCE"),
+    BotCommand("fermate", "Cerca stazioni e fermate"),
     BotCommand("news", "Ultime notizie e avvisi di servizio"),
     BotCommand("iscriviti", "Ricevi notifiche su scioperi e variazioni"),
     BotCommand("disiscriviti", "Disattiva la ricezione delle notifiche"),

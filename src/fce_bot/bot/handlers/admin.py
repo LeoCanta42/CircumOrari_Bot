@@ -60,7 +60,7 @@ def _format_stats_text() -> str:
     ai_expired = stats.get("ai_expired_users", 0)
 
     return (
-        "📊 *Statistiche Sistema FCE Bot*\n\n"
+        "📊 *Statistiche Sistema CircumOrari*\n\n"
         f"💾 *Storage Utenti:* {persistence['label']}\n\n"
         f"👥 *Utenti Totali:* `{stats['total_users']}`\n"
         f"🔔 *Iscritti attivi:* `{stats['subscribed_users']}`\n"
@@ -129,7 +129,7 @@ def _format_user_card(user: dict) -> str:
     trial_display = "Utilizzata" if trial_used else "Disponibile (Non ancora usata)"
 
     return (
-        "👤 *Scheda Utente FCE Bot*\n\n"
+        "👤 *Scheda Utente CircumOrari*\n\n"
         f"🆔 *Chat ID:* `{cid}`\n"
         f"🏷 *Username:* {uname_display}\n"
         f"📛 *Nome:* {fname_display}\n"
@@ -219,7 +219,7 @@ async def _execute_broadcast(bot, broadcast_text: str) -> tuple[int, int]:
         try:
             await bot.send_message(
                 chat_id=uid,
-                text=f"📢 *Avviso FCE Bot:*\n\n{broadcast_text}",
+                text=f"📢 *Avviso CircumOrari:*\n\n{broadcast_text}",
                 parse_mode="Markdown"
             )
             sent += 1
@@ -368,7 +368,7 @@ async def allow_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             chat_id=target_chat_id,
             text=(
                 "🎉 *Accesso AI Abilitato!*\n\n"
-                f"L'amministratore ha autorizzato il tuo account all'uso dell'Assistente AI FCE {period_desc}.\n"
+                f"L'amministratore ha autorizzato il tuo account all'uso dell'Assistente AI CircumOrari {period_desc}.\n"
                 "Da adesso puoi scrivergli liberamente in chat per chiedere orari, coincidenze e percorsi!"
             ),
             parse_mode="Markdown"
@@ -761,7 +761,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     chat_id=target_cid,
                     text=(
                         "🎉 *Accesso AI Abilitato!*\n\n"
-                        "L'amministratore ha autorizzato il tuo account all'uso dell'Assistente AI FCE.\n"
+                        "L'amministratore ha autorizzato il tuo account all'uso dell'Assistente AI CircumOrari.\n"
                         "Da adesso puoi scrivergli liberamente in chat per chiedere orari, coincidenze e percorsi!"
                     ),
                     parse_mode="Markdown"
@@ -1003,7 +1003,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # 12. Trigger RSS News Check & Broadcast from Button
     if data == "adm_check_news":
-        await query.answer("📰 Controllo feed RSS FCE...")
+        await query.answer("📰 Controllo feed RSS notizie...")
         await query.edit_message_text("⏳ *Controllo nuove notizie Circumetnea in corso...*", parse_mode="Markdown")
         back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Pannello Admin", callback_data="adm_menu")]])
         try:
