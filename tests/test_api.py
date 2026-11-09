@@ -30,10 +30,66 @@ def test_home_page():
 
 
 def test_favicon():
-    """Verify favicon route returns valid icon."""
+    """Verify favicon route returns valid multi-resolution icon."""
+    import struct
+
     resp = client.get("/favicon.ico")
     assert resp.status_code == 200
     assert any(t in resp.headers["content-type"] for t in ("image/x-icon", "image/png", "image/svg+xml"))
+
+    # Verify ICO header and contained resolutions
+    content = resp.content
+    assert len(content) >= 6
+    reserved, ico_type, count = struct.unpack("<HHH", content[:6])
+    assert reserved == 0
+    assert ico_type == 1  # 1 = ICO
+    assert count >= 3
+    sizes = [(content[6 + i * 16], content[7 + i * 16]) for i in range(count)]
+    assert (16, 16) in sizes
+    assert (32, 32) in sizes
+
+
+def test_pwa_icons_dimensions_and_transparency():
+    """Verify all PWA raster and vector icons have expected dimensions and transparency."""
+    import struct
+    import xml.etree.ElementTree as ET
+
+    # Test icon-512.png (512x512 RGBA)
+    resp_512 = client.get("/static/icons/icon-512.png")
+    assert resp_512.status_code == 200
+    assert resp_512.headers["content-type"] == "image/png"
+    p512 = resp_512.content
+    assert p512[:8] == b"\x89PNG\r\n\x1a\n"
+    w512, h512, _, color_type_512 = struct.unpack(">IIBB", p512[16:26])
+    assert (w512, h512) == (512, 512)
+    assert color_type_512 == 6  # 6 = RGBA (supports transparent corners)
+
+    # Test icon-192.png (192x192 RGBA)
+    resp_192 = client.get("/static/icons/icon-192.png")
+    assert resp_192.status_code == 200
+    assert resp_192.headers["content-type"] == "image/png"
+    p192 = resp_192.content
+    assert p192[:8] == b"\x89PNG\r\n\x1a\n"
+    w192, h192, _, color_type_192 = struct.unpack(">IIBB", p192[16:26])
+    assert (w192, h192) == (192, 192)
+    assert color_type_192 == 6  # 6 = RGBA
+
+    # Test maskable-512.png (512x512)
+    resp_mask = client.get("/static/icons/maskable-512.png")
+    assert resp_mask.status_code == 200
+    assert resp_mask.headers["content-type"] == "image/png"
+    pmask = resp_mask.content
+    assert pmask[:8] == b"\x89PNG\r\n\x1a\n"
+    wmask, hmask = struct.unpack(">II", pmask[16:24])
+    assert (wmask, hmask) == (512, 512)
+
+    # Test icon.svg XML validity and structure
+    resp_svg = client.get("/static/icons/icon.svg")
+    assert resp_svg.status_code == 200
+    assert "svg" in resp_svg.headers["content-type"]
+    root = ET.fromstring(resp_svg.text)
+    assert root.attrib.get("viewBox") == "0 0 512 512"
+    assert "image" in [child.tag.split("}")[-1] for child in root]
 
 
 def test_pwa_manifest_and_sw():

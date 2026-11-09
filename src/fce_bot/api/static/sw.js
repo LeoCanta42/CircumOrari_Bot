@@ -1,11 +1,13 @@
 // CircumOrari & Metro PWA Service Worker
-const CACHE_NAME = 'fce-pwa-v1';
+const CACHE_NAME = 'fce-pwa-v2';
 const PRECACHE_URLS = [
     '/',
     '/manifest.webmanifest',
     '/static/icons/icon.svg',
     '/static/icons/icon-192.png',
-    '/static/icons/icon-512.png'
+    '/static/icons/icon-512.png',
+    '/static/icons/maskable-512.png',
+    '/favicon.ico'
 ];
 
 self.addEventListener('install', (event) => {
