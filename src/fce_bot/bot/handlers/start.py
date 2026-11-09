@@ -35,7 +35,7 @@ Puoi cercare direttamente senza usare i bottoni:
 Puoi scrivere liberamente come a una persona:
 _"A che ora c'è la metro da Monte Po a Stesicoro?"_
 _"C'è un treno da Randazzo alle 12:30?"_
-L'Assistente AI offre 1 prova gratuita e successivamente un abbonamento di 30 giorni effettivi a soli 1€. Per gestire il tuo piano usa il comando /abbonamento.
+L'Assistente AI offre 1 prova gratuita e successivamente un abbonamento di 30 giorni effettivi. Per gestire il tuo piano usa il comando /abbonamento.
 
 4. *Fermate:*
 `/fermate Milo` per vedere tutte le stazioni che contengono "Milo".

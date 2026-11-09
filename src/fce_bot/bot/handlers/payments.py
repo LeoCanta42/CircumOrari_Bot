@@ -134,7 +134,7 @@ async def ai_trial_activate_callback(update: Update, context: ContextTypes.DEFAU
             "Puoi iniziare subito a scrivere qualsiasi domanda sui percorsi e orari, ad esempio:\n"
             "• _\"Come vado da Catania a Bronte oggi pomeriggio?\"_\n"
             "• _\"A che ora passa la metro a Stesicoro?\"_\n\n"
-            "Al termine della prova, potrai decidere se rinnovare per 30 giorni a soli 1€."
+            "Al termine della prova, potrai decidere se rinnovare per 30 giorni."
         )
         await query.edit_message_text(
             success_msg,

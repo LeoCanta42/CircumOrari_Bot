@@ -238,6 +238,9 @@ def admin_ai_settings_keyboard(
             InlineKeyboardButton(test_btn_label, callback_data="adm_ai_cfg:toggle_admin_test"),
         ],
         [
+            InlineKeyboardButton("🌐 Preleva Stars su Fragment.com", url="https://fragment.com"),
+        ],
+        [
             InlineKeyboardButton("🧹 Disattiva Utenti Scaduti Adesso", callback_data="adm_ai_cfg:clean_expired"),
         ],
         [

@@ -546,12 +546,22 @@ async def list_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
-def _format_ai_settings_text(admin_id: int | str | None = None) -> str:
+async def _format_ai_settings_text(admin_id: int | str | None = None, bot=None) -> str:
     """Generate summary of AI pricing, duration, trial, and payment settings for admin."""
     cfg = settings_repo.get_all_ai_settings()
     trial_str = "🟢 Attiva" if cfg["trial_enabled"] else "🔴 Disattivata"
     token_status = "🟢 Configurato" if cfg["has_provider_token"] else "⭐ Telegram Stars (Zero configurazione)"
     price_label = f"`{cfg['sub_stars']} ⭐` (Stars)" if cfg["currency"] == "XTR" else f"`{cfg['sub_price_eur']:.2f} €`"
+
+    stars_balance_str = ""
+    if bot and hasattr(bot, "get_my_star_balance"):
+        try:
+            bal_obj = await bot.get_my_star_balance()
+            amt = getattr(bal_obj, "amount", None)
+            if isinstance(amt, (int, float)):
+                stars_balance_str = f"⭐ *Saldo Guadagni Bot:* `{amt} ⭐`\n"
+        except Exception as e:
+            logger.debug("Could not fetch bot star balance: %s", e)
 
     test_mode_str = ""
     if admin_id is not None:
@@ -574,11 +584,12 @@ def _format_ai_settings_text(admin_id: int | str | None = None) -> str:
         f"🎁 *Prova Gratuita:* {trial_str} (`{cfg['trial_days']}` giorni, 1 sola volta per utente)\n"
         f"💱 *Valuta Attiva:* `{cfg['currency']}`\n"
         f"🔑 *Provider Telegram:* {token_status} (`{cfg['provider_type']}`)\n"
+        f"{stars_balance_str}"
         f"{test_mode_str}\n"
         "💡 *Regole del servizio:*\n"
         "• Il mese è calcolato in giorni solari continui dal momento del pagamento.\n"
         "• Alla scadenza, gli account vengono disattivati automaticamente.\n"
-        "• Nessun dato sensibile di pagamento viene conservato nel bot (GDPR Minimization).\n\n"
+        "• Le Stars incassate possono essere prelevate in Toncoin (TON) su Fragment.com.\n\n"
         "Tocca i pulsanti sottostanti per personalizzare i parametri:"
     )
 
@@ -672,9 +683,10 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.answer(f"🧹 Disattivati {cnt} utenti con abbonamento/prova scaduti!", show_alert=True)
 
         is_test_mode = settings_repo.get_admin_ai_test_mode(user_id)
+        msg_text = await _format_ai_settings_text(admin_id=user_id, bot=context.bot if context else None)
         try:
             await query.edit_message_text(
-                _format_ai_settings_text(admin_id=user_id),
+                msg_text,
                 reply_markup=admin_ai_settings_keyboard(
                     settings_repo.get_all_ai_settings(),
                     admin_test_mode=is_test_mode
