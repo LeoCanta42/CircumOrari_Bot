@@ -100,3 +100,76 @@ def test_ai_line_path_tracing_query(monkeypatch):
     assert "monte po" in resp.answer.lower()
     assert "borgo" in resp.answer.lower()
     assert "stesicoro" in resp.answer.lower()
+
+
+def test_ai_query_without_time_defaults_to_now(monkeypatch):
+    """Verify queries without time like 'Voglio andare a Paterno\\' dalla Torre Biologica' default time to actual now."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    fixed_now = datetime(2026, 11, 9, 13, 15, tzinfo=ZoneInfo("Europe/Rome"))
+
+    # Test rule-based extraction
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    query = "Voglio andare a Paterno' dalla Torre Biologica"
+    entities = ai_service.extract_entities(query, now=fixed_now)
+    assert entities.origin is not None and "torre biologica" in entities.origin.lower()
+    assert entities.destination is not None and "paterno" in entities.destination.lower()
+    assert entities.time == "13:15"
+    assert entities.has_explicit_time is False
+
+    resp = ai_service.answer_query(query, now=fixed_now)
+    assert resp.time == "13:15"
+    assert resp.itineraries_count > 0
+    assert "torre biologica" in resp.answer.lower() or "policlinico" in resp.answer.lower()
+
+
+def test_ai_query_asap_and_relative_time(monkeypatch):
+    """Verify queries with 'il prima possibile' and 'tra 5 minuti' calculate correct relative times."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    fixed_now = datetime(2026, 11, 9, 13, 15, tzinfo=ZoneInfo("Europe/Rome"))
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+
+    # 1. 'il prima possibile'
+    q_asap = "Voglio andare a Paterno' dalla Torre Biologica il prima possibile"
+    e_asap = ai_service.extract_entities(q_asap, now=fixed_now)
+    assert "torre biologica" in (e_asap.origin or "").lower()
+    assert "paterno" in (e_asap.destination or "").lower()
+    assert e_asap.time == "13:15"
+    assert "il prima possibile" not in (e_asap.origin or "").lower()
+
+    # 2. 'tra 5 minuti'
+    q_5m = "Voglio andare a Paterno' dalla Torre Biologica tra 5 minuti"
+    e_5m = ai_service.extract_entities(q_5m, now=fixed_now)
+    assert "torre biologica" in (e_5m.origin or "").lower()
+    assert "paterno" in (e_5m.destination or "").lower()
+    assert e_5m.time == "13:20"
+    assert "tra 5 minuti" not in (e_5m.origin or "").lower()
+
+    # 3. 'fra mezz'ora'
+    q_half = "Da Catania a Misterbianco fra mezz'ora"
+    e_half = ai_service.extract_entities(q_half, now=fixed_now)
+    assert "catania" in (e_half.origin or "").lower()
+    assert "misterbianco" in (e_half.destination or "").lower()
+    assert e_half.time == "13:45"
+    assert "mezz'ora" not in (e_half.destination or "").lower()
+
+    # 4. 'subito'
+    q_subito = "Vado a Paternò subito partendo da Catania"
+    e_subito = ai_service.extract_entities(q_subito, now=fixed_now)
+    assert e_subito.time == "13:15"
+
+
+def test_ai_late_night_query_morning_fallback(monkeypatch):
+    """Verify late night queries with no remaining trips today gracefully provide next morning departures."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    late_now = datetime(2026, 11, 9, 23, 30, tzinfo=ZoneInfo("Europe/Rome"))
+    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+
+    query = "Voglio andare a Paterno' dalla Torre Biologica"
+    resp = ai_service.answer_query(query, now=late_now)
+    assert resp.time == "23:30"
+    assert resp.itineraries_count > 0
+    assert any(w in resp.answer.lower() for w in ["prime corse", "mattina", "terminato"])
+

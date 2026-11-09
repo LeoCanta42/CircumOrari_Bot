@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
 from fce_bot.core.models import FilterType, Itinerary, Stop, TransportType, TripSegment
+from fce_bot.core.time_utils import get_current_time_str
 from fce_bot.data.city_resolver import geocode_place_in_etna_area, haversine_meters
 from fce_bot.data.db import get_db, normalize_stop_name
 
@@ -746,8 +747,10 @@ class TransitService:
     # ==========================================
 
     @staticmethod
-    def _standardize_time(target_time: str) -> str:
-        cleaned_time = (target_time or "08:00").strip().replace(".", ":")
+    def _standardize_time(target_time: Optional[str] = None) -> str:
+        if not target_time or not target_time.strip():
+            return get_current_time_str()
+        cleaned_time = target_time.strip().replace(".", ":")
         parts = cleaned_time.split(":")
         if len(parts) == 1:
             return f"{int(parts[0]):02d}:00"
