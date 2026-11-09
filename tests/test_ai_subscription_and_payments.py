@@ -67,6 +67,12 @@ def test_settings_repository_defaults_and_mutation():
     assert repo.get_sub_stars() == 50
     assert repo.get_price_display() == "50 ⭐"
 
+    # Deletion test
+    assert repo.set("temp_setting_key", "temporary_val") is True
+    assert repo.get("temp_setting_key") == "temporary_val"
+    assert repo.delete("temp_setting_key") is True
+    assert repo.get("temp_setting_key") is None
+
     # Reset back to standard defaults for subsequent tests
     repo.set_sub_price_eur(1.00)
     repo.set_sub_stars(50)
@@ -263,14 +269,16 @@ async def test_telegram_payment_flow_and_invoice():
     settings_repo.set_currency("XTR")
     settings_repo.set_sub_stars(1)  # 1 Star test configuration
 
-    await send_subscription_invoice(update_inv, context_inv)
-    context_inv.bot.send_invoice.assert_awaited_once()
-    inv_kwargs = context_inv.bot.send_invoice.call_args[1]
-    assert inv_kwargs["currency"] == "XTR"
-    assert inv_kwargs["provider_token"] == ""
-    assert inv_kwargs["prices"][0].amount == 1
-
-    users_repo.delete_user(cid)
+    try:
+        await send_subscription_invoice(update_inv, context_inv)
+        context_inv.bot.send_invoice.assert_awaited_once()
+        inv_kwargs = context_inv.bot.send_invoice.call_args[1]
+        assert inv_kwargs["currency"] == "XTR"
+        assert inv_kwargs["provider_token"] == ""
+        assert inv_kwargs["prices"][0].amount == 1
+    finally:
+        settings_repo.set_sub_stars(50)
+        users_repo.delete_user(cid)
 
 
 @pytest.mark.anyio
@@ -367,78 +375,81 @@ async def test_admin_ai_test_mode_toggle_and_buying(monkeypatch):
 
     # Clean initial state
     users_repo.delete_user(admin_id)
-    settings_repo.set_admin_ai_test_mode(admin_id, False)
+    settings_repo.delete(f"admin_ai_test:{admin_id}")
 
-    # 1. Initially, admin has full VIP AI bypass
-    assert is_admin(admin_id) is True
-    assert users_repo.is_ai_allowed(admin_id) is True
-    status = users_repo.get_ai_status(admin_id)
-    assert status["is_admin"] is True
-    assert status["admin_test_mode"] is False
+    try:
+        # 1. Initially, admin has full VIP AI bypass
+        assert is_admin(admin_id) is True
+        assert users_repo.is_ai_allowed(admin_id) is True
+        status = users_repo.get_ai_status(admin_id)
+        assert status["is_admin"] is True
+        assert status["admin_test_mode"] is False
 
-    # 2. Admin revokes AI for their own account in User Management panel to test purchase
-    update = MagicMock(spec=Update)
-    query = MagicMock(spec=CallbackQuery)
-    query.answer = AsyncMock()
-    query.edit_message_text = AsyncMock()
-    update.callback_query = query
-    admin_user = MagicMock(spec=User)
-    admin_user.id = admin_id
-    update.effective_user = admin_user
-    context = MagicMock()
-    context.user_data = {}
+        # 2. Admin revokes AI for their own account in User Management panel to test purchase
+        update = MagicMock(spec=Update)
+        query = MagicMock(spec=CallbackQuery)
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+        update.callback_query = query
+        admin_user = MagicMock(spec=User)
+        admin_user.id = admin_id
+        update.effective_user = admin_user
+        context = MagicMock()
+        context.user_data = {}
 
-    query.data = f"adm_u_ai:{admin_id}:0:all:0"
-    await admin_callback(update, context)
+        query.data = f"adm_u_ai:{admin_id}:0:all:0"
+        await admin_callback(update, context)
 
-    # Verify test mode is now active and AI is revoked for the admin account
-    assert settings_repo.get_admin_ai_test_mode(admin_id) is True
-    assert users_repo.is_ai_allowed(admin_id) is False
-    status_test = users_repo.get_ai_status(admin_id)
-    assert status_test["is_admin"] is False
-    assert status_test["admin_test_mode"] is True
-    assert status_test["ai_allowed"] is False
+        # Verify test mode is now active and AI is revoked for the admin account
+        assert settings_repo.get_admin_ai_test_mode(admin_id) is True
+        assert users_repo.is_ai_allowed(admin_id) is False
+        status_test = users_repo.get_ai_status(admin_id)
+        assert status_test["is_admin"] is False
+        assert status_test["admin_test_mode"] is True
+        assert status_test["ai_allowed"] is False
 
-    # Admin privilege for /admin remains intact
-    assert is_admin(admin_id) is True
+        # Admin privilege for /admin remains intact
+        assert is_admin(admin_id) is True
 
-    # 3. Test /abbonamento command behavior for admin in test mode
-    msg_abbonamento = MagicMock(spec=Message)
-    msg_abbonamento.reply_text = AsyncMock()
-    update_abb = MagicMock(spec=Update)
-    chat_abb = MagicMock(spec=Chat)
-    chat_abb.id = admin_id
-    update_abb.effective_chat = chat_abb
-    update_abb.effective_message = msg_abbonamento
+        # 3. Test /abbonamento command behavior for admin in test mode
+        msg_abbonamento = MagicMock(spec=Message)
+        msg_abbonamento.reply_text = AsyncMock()
+        update_abb = MagicMock(spec=Update)
+        chat_abb = MagicMock(spec=Chat)
+        chat_abb.id = admin_id
+        update_abb.effective_chat = chat_abb
+        update_abb.effective_message = msg_abbonamento
 
-    await abbonamento_command(update_abb, context)
-    msg_abbonamento.reply_text.assert_awaited_once()
-    reply_text = msg_abbonamento.reply_text.call_args[0][0]
-    # Should show the subscription offer, NOT "Account Amministratore già permanente"
-    assert "Abbonamento Assistente AI FCE" in reply_text
-    assert "Account Amministratore" not in reply_text
+        await abbonamento_command(update_abb, context)
+        msg_abbonamento.reply_text.assert_awaited_once()
+        reply_text = msg_abbonamento.reply_text.call_args[0][0]
+        # Should show the subscription offer, NOT "Account Amministratore già permanente"
+        assert "Abbonamento Assistente AI FCE" in reply_text
+        assert "Account Amministratore" not in reply_text
 
-    # 4. Admin simulates purchasing 1 Telegram Star
-    settings_repo.set_currency("XTR")
-    settings_repo.set_sub_stars(1)
-    ok, exp = users_repo.extend_ai_subscription(admin_id, days=30)
-    assert ok is True
-    assert exp is not None
-    assert users_repo.is_ai_allowed(admin_id) is True
+        # 4. Admin simulates purchasing 1 Telegram Star
+        settings_repo.set_currency("XTR")
+        settings_repo.set_sub_stars(1)
+        ok, exp = users_repo.extend_ai_subscription(admin_id, days=30)
+        assert ok is True
+        assert exp is not None
+        assert users_repo.is_ai_allowed(admin_id) is True
 
-    # 5. Admin restores permanent unlimited VIP access in User Management panel
-    query.edit_message_text.reset_mock()
-    query.answer.reset_mock()
-    query.data = f"adm_u_perm:{admin_id}:all:0"
-    await admin_callback(update, context)
+        # 5. Admin restores permanent unlimited VIP access in User Management panel
+        query.edit_message_text.reset_mock()
+        query.answer.reset_mock()
+        query.data = f"adm_u_perm:{admin_id}:all:0"
+        await admin_callback(update, context)
 
-    # Verify test mode is disabled and VIP access is restored
-    assert settings_repo.get_admin_ai_test_mode(admin_id) is False
-    assert users_repo.is_ai_allowed(admin_id) is True
-    status_vip = users_repo.get_ai_status(admin_id)
-    assert status_vip["is_admin"] is True
-    assert status_vip["is_permanent"] is True
-
-    # Clean up
-    users_repo.delete_user(admin_id)
+        # Verify test mode is disabled and VIP access is restored
+        assert settings_repo.get_admin_ai_test_mode(admin_id) is False
+        assert users_repo.is_ai_allowed(admin_id) is True
+        status_vip = users_repo.get_ai_status(admin_id)
+        assert status_vip["is_admin"] is True
+        assert status_vip["is_permanent"] is True
+    finally:
+        # Restore production defaults and clean test artifacts
+        settings_repo.set_sub_stars(50)
+        settings_repo.delete(f"admin_ai_test:{admin_id}")
+        users_repo.delete_user(admin_id)
 

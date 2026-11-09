@@ -46,6 +46,16 @@ class SettingsRepository:
             logger.error("Error writing setting '%s': %s", key, e)
             return False
 
+    def delete(self, key: str) -> bool:
+        """Remove a setting key from persistent storage."""
+        try:
+            with get_persistent_db(self.db_path) as conn:
+                conn.execute("DELETE FROM bot_settings WHERE key = ?", (key,))
+                return True
+        except Exception as e:
+            logger.error("Error deleting setting '%s': %s", key, e)
+            return False
+
     def get_sub_price_eur(self) -> float:
         """Get monthly subscription price in EUR (default 1.00 EUR)."""
         raw = self.get("sub_price_eur")
@@ -149,7 +159,9 @@ class SettingsRepository:
 
     def set_admin_ai_test_mode(self, admin_id: int | str, enabled: bool) -> bool:
         """Toggle test buying mode for an administrator account."""
-        return self.set(f"admin_ai_test:{admin_id}", "1" if enabled else "0")
+        if not enabled:
+            return self.delete(f"admin_ai_test:{admin_id}")
+        return self.set(f"admin_ai_test:{admin_id}", "1")
 
     def get_all_ai_settings(self) -> Dict[str, Any]:
         """Return dict summary of all current AI subscription and trial settings."""

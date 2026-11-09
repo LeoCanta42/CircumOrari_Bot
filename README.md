@@ -198,7 +198,7 @@ docker-compose logs -f
 | `/viaggio <origine> - <destinazione> [ora]` | Scorciatoia rapida per cercare orari senza pulsanti |
 | `/fermate <query>` | Cerca fermate o stazioni della rete FCE |
 | `/news` | Mostra le ultime 3 notizie/avvisi ufficiali Circumetnea |
-| `/abbonamento` | Verifica stato, prova gratuita (3gg) o attiva l'abbonamento mensile (30gg a 1€) |
+| `/abbonamento` | Verifica stato, prova gratuita (3gg) o attiva l'abbonamento mensile (30gg a 50 ⭐ / ~1€) |
 | `/documenti` | Link diretti per scaricare i PDF ufficiali (Metro, Treni, Bus) |
 | `/chat_id` | Mostra l'ID univoco della chat corrente |
 | `/help` | Guida completa alle funzionalità |

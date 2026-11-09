@@ -4,12 +4,12 @@ This repository follows a multi-agent workflow for feature implementation, bug f
 
 ## Subagents Defined
 
-1. **Developer Subagent** ([`.agents/agents/developer/agent.md`](file:///run/media/leo/DockerStorage/Projects/FCE_bot/.agents/agents/developer/agent.md)):
+1. **Developer Subagent** ([`.agents/agents/developer/agent.md`]):
    - **Role**: Lead Developer.
    - **Responsibilities**: Reading code, implementing changes, refactoring, editing files, creating unit tests in `tests/`, and running test commands.
    - **Access**: Write tools enabled (`edit_file`, `write_file`, `run_command`, etc.).
 
-2. **Reviewer Subagent** ([`.agents/agents/reviewer/agent.md`](file:///run/media/leo/DockerStorage/Projects/FCE_bot/.agents/agents/reviewer/agent.md)):
+2. **Reviewer Subagent** ([`.agents/agents/reviewer/agent.md`]):
    - **Role**: Senior Code Reviewer & QA Lead.
    - **Responsibilities**: Auditing git diffs, inspecting edge cases, validating GDPR compliance (data minimization, zero PII/card storage), verifying inline keyboard consistency, and running the test suite (`pytest`).
    - **Access**: Read & test tools (`read_file`, `run_command`, `manage_task`).
