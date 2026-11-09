@@ -239,6 +239,13 @@ async def test_telegram_payment_flow_and_invoice():
     await pre_checkout_handler(update_pre, context_pre)
     query_pre.answer.assert_awaited_once_with(ok=False, error_message="Ordine non valido o scaduto.")
 
+    # Idempotency: exception if query was already answered by fast-path is safely suppressed
+    query_pre.invoice_payload = f"ai_sub:{cid}:12345678"
+    query_pre.answer.reset_mock()
+    query_pre.answer.side_effect = Exception("Query is already answered by fast-path")
+    await pre_checkout_handler(update_pre, context_pre)
+    query_pre.answer.assert_awaited_once_with(ok=True)
+
     # 2. Successful Payment handler
     update_succ = MagicMock(spec=Update)
     msg_succ = MagicMock(spec=Message)

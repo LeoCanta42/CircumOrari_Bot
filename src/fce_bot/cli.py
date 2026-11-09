@@ -4,6 +4,7 @@ import sys
 import argparse
 import asyncio
 import logging
+from typing import Optional
 from fce_bot.config import settings
 
 logging.basicConfig(
@@ -103,6 +104,74 @@ def show_stats() -> None:
     print(f"GTFS Stop Times:    {st}")
 
 
+def webhook_info() -> None:
+    """Inspect current Telegram webhook configuration and allowed updates."""
+    import httpx
+    if not settings.TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN is not configured! Please set it in .env")
+        sys.exit(1)
+
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+    try:
+        resp = httpx.get(url, timeout=10.0)
+        data = resp.json()
+    except Exception as e:
+        logger.error("Failed to query getWebhookInfo: %s", e)
+        sys.exit(1)
+
+    print("=== Telegram Webhook Info ===")
+    if data.get("ok"):
+        res = data.get("result", {})
+        print(f"URL:                     {res.get('url') or '(none)'}")
+        print(f"Has Custom Certificate:  {res.get('has_custom_certificate')}")
+        print(f"Pending Update Count:    {res.get('pending_update_count')}")
+        print(f"Allowed Updates:         {res.get('allowed_updates') or 'ALL (default)'}")
+        print(f"Last Error Date:         {res.get('last_error_date')}")
+        print(f"Last Error Message:      {res.get('last_error_message')}")
+        print(f"Max Connections:         {res.get('max_connections')}")
+    else:
+        print(f"Error from Telegram API: {data}")
+
+
+def set_webhook(url: Optional[str] = None, drop_pending: bool = False) -> None:
+    """Configure or repair Telegram webhook with required allowed_updates."""
+    import httpx
+    if not settings.TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN is not configured! Please set it in .env")
+        sys.exit(1)
+
+    target_url = url or settings.WEBHOOK_URL
+    if not target_url:
+        logger.error("No webhook URL specified! Provide --url or configure WEBHOOK_URL in .env")
+        sys.exit(1)
+
+    payload = {
+        "url": target_url,
+        "allowed_updates": ["message", "callback_query", "pre_checkout_query", "my_chat_member"],
+        "drop_pending_updates": drop_pending,
+    }
+    if settings.WEBHOOK_SECRET:
+        payload["secret_token"] = settings.WEBHOOK_SECRET
+
+    api_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+    try:
+        resp = httpx.post(api_url, json=payload, timeout=10.0)
+        data = resp.json()
+    except Exception as e:
+        logger.error("Failed to set webhook via Telegram API: %s", e)
+        sys.exit(1)
+
+    print("=== Set Telegram Webhook ===")
+    print(f"Target URL:        {target_url}")
+    print(f"Secret Configured: {'Yes' if settings.WEBHOOK_SECRET else 'No'}")
+    print(f"Allowed Updates:   {payload['allowed_updates']}")
+    print(f"Telegram Result:   {data}")
+    if data.get("ok"):
+        print("Webhook successfully configured!")
+    else:
+        print("Warning: Telegram rejected webhook setup.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="FCE Circumetnea Bot CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -119,6 +188,10 @@ def main() -> None:
     worker_p = subparsers.add_parser("news-worker", help="Run news polling loop daemon")
     worker_p.add_argument("--interval", type=int, default=1800, help="Check interval in seconds")
     subparsers.add_parser("stats", help="Print system statistics")
+    subparsers.add_parser("webhook-info", help="Inspect Telegram webhook status and allowed_updates")
+    set_p = subparsers.add_parser("set-webhook", help="Configure Telegram webhook with allowed_updates")
+    set_p.add_argument("--url", default=None, help="Target webhook URL (defaults to WEBHOOK_URL in .env)")
+    set_p.add_argument("--drop-pending", action="store_true", help="Drop pending updates on Telegram")
 
     args = parser.parse_args()
 
@@ -136,6 +209,10 @@ def main() -> None:
         run_news_worker(interval_seconds=args.interval)
     elif args.command == "stats":
         show_stats()
+    elif args.command == "webhook-info":
+        webhook_info()
+    elif args.command == "set-webhook":
+        set_webhook(url=args.url, drop_pending=args.drop_pending)
     else:
         parser.print_help()
 

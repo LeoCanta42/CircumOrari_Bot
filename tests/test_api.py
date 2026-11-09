@@ -204,3 +204,320 @@ def test_web_ui_city_filters_and_stop_picker_present():
     assert 'id="originDropdown"' in html
     assert 'id="destDropdown"' in html
     assert "stops-path-details" in html
+
+
+def test_telegram_webhook_secret_auth():
+    """Verify webhook secret verification returns 403 on invalid secret."""
+    from fce_bot.config import settings
+
+    orig_secret = settings.WEBHOOK_SECRET
+    try:
+        settings.WEBHOOK_SECRET = "test_webhook_secret_123"
+
+        # Missing secret header -> 403
+        resp_missing = client.post("/api/webhook", json={"update_id": 1})
+        assert resp_missing.status_code == 403
+
+        # Invalid secret header -> 403
+        resp_invalid = client.post(
+            "/api/webhook",
+            json={"update_id": 1},
+            headers={"x-telegram-bot-api-secret-token": "wrong_secret"}
+        )
+        assert resp_invalid.status_code == 403
+    finally:
+        settings.WEBHOOK_SECRET = orig_secret
+
+
+def test_telegram_webhook_fast_path_pre_checkout_query_valid():
+    """Verify fast-path immediately calls answerPreCheckoutQuery(ok=True) for valid subscription payload."""
+    from unittest.mock import patch, AsyncMock, MagicMock
+    import httpx
+    from fce_bot.config import settings
+
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_secret = settings.WEBHOOK_SECRET
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:TEST_TOKEN"
+        settings.WEBHOOK_SECRET = ""
+
+        webhook_payload = {
+            "update_id": 9999,
+            "pre_checkout_query": {
+                "id": "pcq_test_valid_123",
+                "from": {"id": 12345, "is_bot": False, "first_name": "Mario"},
+                "currency": "XTR",
+                "total_amount": 50,
+                "invoice_payload": "ai_sub:12345:1700000000",
+            }
+        }
+
+        mock_post_resp = MagicMock(spec=httpx.Response)
+        mock_post_resp.status_code = 200
+        mock_post_resp.json.return_value = {"ok": True, "result": True}
+
+        mock_app = MagicMock()
+        mock_app._initialized = True
+        mock_app.process_update = AsyncMock()
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_httpx_post:
+            mock_httpx_post.return_value = mock_post_resp
+            with patch("fce_bot.api.router.get_telegram_app", return_value=mock_app):
+                resp = client.post("/api/webhook", json=webhook_payload)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+        # Verify fast-path called answerPreCheckoutQuery with ok=True
+        mock_httpx_post.assert_awaited_once()
+        call_url = mock_httpx_post.call_args[0][0]
+        call_json = mock_httpx_post.call_args[1]["json"]
+        assert call_url == "https://api.telegram.org/bot123456:TEST_TOKEN/answerPreCheckoutQuery"
+        assert call_json["pre_checkout_query_id"] == "pcq_test_valid_123"
+        assert call_json["ok"] is True
+        assert "error_message" not in call_json
+
+        # Verify app also processed the update
+        mock_app.process_update.assert_awaited_once()
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.WEBHOOK_SECRET = orig_secret
+
+
+def test_telegram_webhook_fast_path_pre_checkout_query_invalid():
+    """Verify fast-path rejects invalid payload with ok=False and error message."""
+    from unittest.mock import patch, AsyncMock, MagicMock
+    import httpx
+    from fce_bot.config import settings
+
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_secret = settings.WEBHOOK_SECRET
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:TEST_TOKEN"
+        settings.WEBHOOK_SECRET = ""
+
+        webhook_payload = {
+            "update_id": 9999,
+            "pre_checkout_query": {
+                "id": "pcq_test_invalid_456",
+                "from": {"id": 12345, "is_bot": False, "first_name": "Mario"},
+                "currency": "XTR",
+                "total_amount": 50,
+                "invoice_payload": "corrupted_payload_data",
+            }
+        }
+
+        mock_post_resp = MagicMock(spec=httpx.Response)
+        mock_post_resp.status_code = 200
+
+        mock_app = MagicMock()
+        mock_app._initialized = True
+        mock_app.process_update = AsyncMock()
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_httpx_post:
+            mock_httpx_post.return_value = mock_post_resp
+            with patch("fce_bot.api.router.get_telegram_app", return_value=mock_app):
+                resp = client.post("/api/webhook", json=webhook_payload)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+        # Verify fast-path called answerPreCheckoutQuery with ok=False and error message
+        mock_httpx_post.assert_awaited_once()
+        call_json = mock_httpx_post.call_args[1]["json"]
+        assert call_json["pre_checkout_query_id"] == "pcq_test_invalid_456"
+        assert call_json["ok"] is False
+        assert "error_message" in call_json
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.WEBHOOK_SECRET = orig_secret
+
+
+def test_telegram_webhook_fast_path_http_exception_resilience():
+    """Verify webhook continues gracefully even if outbound fast-path HTTP call encounters error."""
+    from unittest.mock import patch, AsyncMock, MagicMock
+    from fce_bot.config import settings
+
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_secret = settings.WEBHOOK_SECRET
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:TEST_TOKEN"
+        settings.WEBHOOK_SECRET = ""
+
+        webhook_payload = {
+            "update_id": 9999,
+            "pre_checkout_query": {
+                "id": "pcq_test_err_789",
+                "from": {"id": 12345, "is_bot": False, "first_name": "Mario"},
+                "currency": "XTR",
+                "total_amount": 50,
+                "invoice_payload": "ai_sub:12345:1700000000",
+            }
+        }
+
+        mock_app = MagicMock()
+        mock_app._initialized = True
+        mock_app.process_update = AsyncMock()
+
+        with patch("httpx.AsyncClient.post", side_effect=Exception("Connection timed out")):
+            with patch("fce_bot.api.router.get_telegram_app", return_value=mock_app):
+                resp = client.post("/api/webhook", json=webhook_payload)
+
+        # Webhook should NOT fail with 500 when fast-path network fails
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        mock_app.process_update.assert_awaited_once()
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.WEBHOOK_SECRET = orig_secret
+
+
+def test_webhook_info_endpoint():
+    """Verify /api/webhook/info inspects Telegram webhook configuration."""
+    from unittest.mock import patch, AsyncMock, MagicMock
+    import httpx
+    from fce_bot.config import settings
+
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_secret = settings.WEBHOOK_SECRET
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:TEST_TOKEN"
+        settings.WEBHOOK_SECRET = "mgmt_secret"
+
+        # 1. Unauthenticated request -> 403
+        resp_unauth = client.get("/api/webhook/info")
+        assert resp_unauth.status_code == 403
+
+        # 2. Authenticated request
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "ok": True,
+            "result": {
+                "url": "https://example.vercel.app/api/webhook",
+                "allowed_updates": ["message", "callback_query", "pre_checkout_query"],
+                "pending_update_count": 0,
+            }
+        }
+
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_resp
+            resp_auth = client.get("/api/webhook/info?secret=mgmt_secret")
+
+        assert resp_auth.status_code == 200
+        data = resp_auth.json()
+        assert data["ok"] is True
+        assert data["result"]["url"] == "https://example.vercel.app/api/webhook"
+        assert "pre_checkout_query" in data["result"]["allowed_updates"]
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.WEBHOOK_SECRET = orig_secret
+
+
+def test_webhook_set_endpoint():
+    """Verify /api/webhook/set sets webhook with required allowed_updates."""
+    from unittest.mock import patch, AsyncMock, MagicMock
+    import httpx
+    from fce_bot.config import settings
+
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_secret = settings.WEBHOOK_SECRET
+    orig_url = settings.WEBHOOK_URL
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:TEST_TOKEN"
+        settings.WEBHOOK_SECRET = "mgmt_secret"
+        settings.WEBHOOK_URL = ""
+
+        # 1. Unauthenticated request -> 403
+        resp_unauth = client.post("/api/webhook/set")
+        assert resp_unauth.status_code == 403
+
+        # 2. Missing URL -> 400
+        resp_missing = client.post("/api/webhook/set?secret=mgmt_secret")
+        assert resp_missing.status_code == 400
+        assert "WEBHOOK_URL" in resp_missing.json()["detail"]
+
+        # 3. Successful GET configuration
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": True, "description": "Webhook was set"}
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_resp
+            resp_set_get = client.get(
+                "/api/webhook/set?secret=mgmt_secret&url=https://test.vercel.app/api/webhook"
+            )
+
+        assert resp_set_get.status_code == 200
+        assert resp_set_get.json()["ok"] is True
+        mock_post.assert_awaited_once()
+        call_json = mock_post.call_args[1]["json"]
+        assert call_json["url"] == "https://test.vercel.app/api/webhook"
+        assert "pre_checkout_query" in call_json["allowed_updates"]
+        assert "message" in call_json["allowed_updates"]
+        assert "callback_query" in call_json["allowed_updates"]
+        assert call_json["secret_token"] == "mgmt_secret"
+
+        # 4. Successful POST configuration with body
+        mock_post.reset_mock()
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_resp
+            resp_set_post = client.post(
+                "/api/webhook/set",
+                headers={"Authorization": "Bearer mgmt_secret"},
+                json={
+                    "url": "https://test.vercel.app/api/webhook",
+                    "drop_pending_updates": True,
+                }
+            )
+
+        assert resp_set_post.status_code == 200
+        assert resp_set_post.json()["ok"] is True
+        call_json2 = mock_post.call_args[1]["json"]
+        assert call_json2["drop_pending_updates"] is True
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.WEBHOOK_SECRET = orig_secret
+        settings.WEBHOOK_URL = orig_url
+
+
+def test_cli_webhook_commands():
+    """Verify CLI set-webhook and webhook-info commands."""
+    from unittest.mock import patch, MagicMock
+    from fce_bot import cli
+    from fce_bot.config import settings
+
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_secret = settings.WEBHOOK_SECRET
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:TEST_TOKEN"
+        settings.WEBHOOK_SECRET = "test_sec"
+
+        mock_resp_info = MagicMock()
+        mock_resp_info.json.return_value = {
+            "ok": True,
+            "result": {
+                "url": "https://example.com/api/webhook",
+                "allowed_updates": ["message", "pre_checkout_query"],
+                "has_custom_certificate": False,
+                "pending_update_count": 0,
+                "last_error_date": None,
+                "last_error_message": None,
+                "max_connections": 40,
+            }
+        }
+        with patch("httpx.get", return_value=mock_resp_info):
+            cli.webhook_info()
+
+        mock_resp_set = MagicMock()
+        mock_resp_set.json.return_value = {"ok": True, "description": "Webhook set"}
+        with patch("httpx.post", return_value=mock_resp_set) as mock_p:
+            cli.set_webhook(url="https://example.com/api/webhook", drop_pending=True)
+            mock_p.assert_called_once()
+            args, kwargs = mock_p.call_args
+            assert "setWebhook" in args[0]
+            assert "pre_checkout_query" in kwargs["json"]["allowed_updates"]
+            assert kwargs["json"]["drop_pending_updates"] is True
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.WEBHOOK_SECRET = orig_secret
