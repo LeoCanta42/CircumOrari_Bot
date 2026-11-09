@@ -550,8 +550,7 @@ async def _format_ai_settings_text(admin_id: int | str | None = None, bot=None) 
     """Generate summary of AI pricing, duration, trial, and payment settings for admin."""
     cfg = settings_repo.get_all_ai_settings()
     trial_str = "🟢 Attiva" if cfg["trial_enabled"] else "🔴 Disattivata"
-    token_status = "🟢 Configurato" if cfg["has_provider_token"] else "⭐ Telegram Stars (Zero configurazione)"
-    price_label = f"`{cfg['sub_stars']} ⭐` (Stars)" if cfg["currency"] == "XTR" else f"`{cfg['sub_price_eur']:.2f} €`"
+    price_label = f"`{cfg['sub_stars']} ⭐` (Telegram Stars)"
 
     stars_balance_str = ""
     if bot and hasattr(bot, "get_my_star_balance"):
@@ -568,8 +567,8 @@ async def _format_ai_settings_text(admin_id: int | str | None = None, bot=None) 
         f"💵 *Prezzo Abbonamento:* {price_label} (mese da {cfg['sub_days']} giorni)\n"
         f"📅 *Durata Periodo:* `{cfg['sub_days']}` giorni effettivi\n"
         f"🎁 *Prova Gratuita:* {trial_str} (`{cfg['trial_days']}` giorni, 1 sola volta per utente)\n"
-        f"💱 *Valuta Attiva:* `{cfg['currency']}`\n"
-        f"🔑 *Provider Telegram:* {token_status} (`{cfg['provider_type']}`)\n"
+        "💱 *Valuta:* `⭐ Telegram Stars (XTR)`\n"
+        "🔑 *Provider:* `⭐ Telegram Stars (Nativo - Zero Config)`\n"
         f"{stars_balance_str}\n"
         "💡 *Regole del servizio:*\n"
         "• Il mese è calcolato in giorni solari continui dal momento del pagamento.\n"
@@ -634,18 +633,13 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             settings_repo.set_sub_days(d)
             await query.answer(f"📅 Mese impostato a {d} giorni")
         elif data.startswith("adm_ai_cfg:price:"):
-            p = float(data.split(":")[2])
-            settings_repo.set_sub_price_eur(p)
-            await query.answer(f"💵 Prezzo impostato a {p:.2f} €")
+            await query.answer("⭐ Al momento sono supportate esclusivamente le Telegram Stars.", show_alert=True)
         elif data.startswith("adm_ai_cfg:stars:"):
             s = int(data.split(":")[2])
             settings_repo.set_sub_stars(s)
             await query.answer(f"⭐ Prezzo impostato a {s} Stars")
         elif data == "adm_ai_cfg:toggle_currency":
-            c = settings_repo.get_currency()
-            new_c = "XTR" if c == "EUR" else "EUR"
-            settings_repo.set_currency(new_c)
-            await query.answer(f"💱 Valuta impostata a {new_c}")
+            await query.answer("⭐ Al momento sono supportate esclusivamente le Telegram Stars.", show_alert=True)
         elif data == "adm_ai_cfg:toggle_admin_test":
             cur_test = settings_repo.get_admin_ai_test_mode(user_id)
             new_test = not cur_test

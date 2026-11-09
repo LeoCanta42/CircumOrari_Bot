@@ -36,7 +36,7 @@ def test_settings_repository_defaults_and_mutation():
     assert repo.get_sub_days() == 30
     assert repo.get_trial_days() == 3
     assert repo.is_trial_enabled() is True
-    assert repo.get_currency() in ("EUR", "XTR")
+    assert repo.get_currency() == "XTR"
 
     # Update price
     assert repo.set_sub_price_eur(1.99) is True
@@ -52,9 +52,10 @@ def test_settings_repository_defaults_and_mutation():
     assert repo.set_trial_enabled(False) is True
     assert repo.is_trial_enabled() is False
 
-    # Update currency
+    # Update currency: only XTR is allowed
     assert repo.set_currency("XTR") is True
     assert repo.get_currency() == "XTR"
+    assert repo.set_currency("EUR") is False
     assert repo.set_currency("INVALID") is False
 
     # Stars configuration
@@ -328,10 +329,10 @@ async def test_admin_settings_customization_callbacks(monkeypatch):
     await admin_callback(update, context)
     assert "Configurazione Abbonamenti AI" in query.edit_message_text.call_args[0][0]
 
-    # Change price to 2.00
-    query.data = "adm_ai_cfg:price:2.00"
+    # Change stars to 25
+    query.data = "adm_ai_cfg:stars:25"
     await admin_callback(update, context)
-    assert settings_repo.get_sub_price_eur() == 2.00
+    assert settings_repo.get_sub_stars() == 25
 
     # Change sub days to 15
     query.data = "adm_ai_cfg:sub_days:15"
@@ -350,10 +351,10 @@ async def test_admin_settings_customization_callbacks(monkeypatch):
     query.answer.assert_awaited()
 
     # Reset back to defaults
-    settings_repo.set_sub_price_eur(1.00)
+    settings_repo.set_sub_stars(50)
     settings_repo.set_sub_days(30)
     settings_repo.set_trial_enabled(True)
-    settings_repo.set_currency("EUR")
+    settings_repo.set_currency("XTR")
 
 
 @pytest.mark.anyio

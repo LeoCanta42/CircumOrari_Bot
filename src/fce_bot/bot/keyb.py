@@ -179,32 +179,21 @@ def admin_ai_settings_keyboard(
     current_settings: dict,
     admin_test_mode: bool = False
 ) -> InlineKeyboardMarkup:
-    """Keyboard for managing AI subscription prices, duration, trial and payments."""
+    """Keyboard for managing AI subscription prices, duration, trial and payments (strictly Telegram Stars)."""
     trial_enabled = current_settings.get("trial_enabled", True)
-    curr = current_settings.get("currency", "XTR")
     trial_days = current_settings.get("trial_days", 3)
     sub_days = current_settings.get("sub_days", 30)
-    price = current_settings.get("sub_price_eur", 1.0)
     stars = current_settings.get("sub_stars", 50)
 
     trial_toggle_label = "🎁 Prova: 🟢 ON (Attiva)" if trial_enabled else "🎁 Prova: 🔴 OFF (Spenta)"
-    curr_label = "💱 Valuta: ⭐ Telegram Stars (XTR)" if curr == "XTR" else "💱 Valuta: EUR (€)"
 
-    if curr == "XTR":
-        price_row = [
-            InlineKeyboardButton("⭐ Stars", callback_data="noop"),
-            InlineKeyboardButton(f"{'✅ ' if stars == 1 else ''}1⭐ (Test)", callback_data="adm_ai_cfg:stars:1"),
-            InlineKeyboardButton(f"{'✅ ' if stars == 25 else ''}25⭐", callback_data="adm_ai_cfg:stars:25"),
-            InlineKeyboardButton(f"{'✅ ' if stars == 50 else ''}50⭐", callback_data="adm_ai_cfg:stars:50"),
-            InlineKeyboardButton(f"{'✅ ' if stars == 100 else ''}100⭐", callback_data="adm_ai_cfg:stars:100"),
-        ]
-    else:
-        price_row = [
-            InlineKeyboardButton("💵 Prezzo", callback_data="noop"),
-            InlineKeyboardButton(f"{'✅ ' if price == 0.5 else ''}0.50€", callback_data="adm_ai_cfg:price:0.50"),
-            InlineKeyboardButton(f"{'✅ ' if price == 1.0 else ''}1.00€", callback_data="adm_ai_cfg:price:1.00"),
-            InlineKeyboardButton(f"{'✅ ' if price == 2.0 else ''}2.00€", callback_data="adm_ai_cfg:price:2.00"),
-        ]
+    price_row = [
+        InlineKeyboardButton("⭐ Stars", callback_data="noop"),
+        InlineKeyboardButton(f"{'✅ ' if stars == 1 else ''}1⭐ (Test)", callback_data="adm_ai_cfg:stars:1"),
+        InlineKeyboardButton(f"{'✅ ' if stars == 25 else ''}25⭐", callback_data="adm_ai_cfg:stars:25"),
+        InlineKeyboardButton(f"{'✅ ' if stars == 50 else ''}50⭐", callback_data="adm_ai_cfg:stars:50"),
+        InlineKeyboardButton(f"{'✅ ' if stars == 100 else ''}100⭐", callback_data="adm_ai_cfg:stars:100"),
+    ]
 
     return InlineKeyboardMarkup([
         [
@@ -224,9 +213,6 @@ def admin_ai_settings_keyboard(
         ],
         price_row,
         [
-            InlineKeyboardButton(curr_label, callback_data="adm_ai_cfg:toggle_currency"),
-        ],
-        [
             InlineKeyboardButton("🧹 Disattiva Utenti Scaduti Adesso", callback_data="adm_ai_cfg:clean_expired"),
         ],
         [
@@ -238,7 +224,7 @@ def admin_ai_settings_keyboard(
 def ai_subscription_prompt_keyboard(
     can_trial: bool = False,
     is_expired: bool = False,
-    price_display: str = "1,00 €",
+    price_display: str = "50 ⭐",
     sub_days: int = 30,
     is_info_view: bool = False
 ) -> InlineKeyboardMarkup:
@@ -287,21 +273,17 @@ def admin_user_delete_confirm_keyboard(
     ])
 
 
-def subscription_manage_keyboard(
-    is_subscribed: bool,
-    show_news_btn: bool = True
-) -> InlineKeyboardMarkup:
+def subscription_manage_keyboard(is_subscribed: bool) -> InlineKeyboardMarkup:
     """Keyboard for opting in/out of service news broadcasts."""
     if is_subscribed:
         action_btn = InlineKeyboardButton("🔕 Disattiva Notifiche", callback_data="sub_disable")
     else:
         action_btn = InlineKeyboardButton("🔔 Iscriviti agli Avvisi", callback_data="sub_enable")
 
-    rows = [[action_btn]]
-    if show_news_btn:
-        rows.append([InlineKeyboardButton("📢 Leggi Ultime Notizie", callback_data="news_latest")])
-    rows.append([InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")])
-    return InlineKeyboardMarkup(rows)
+    return InlineKeyboardMarkup([
+        [action_btn],
+        [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
+    ])
 
 
 def transport_select_keyboard() -> InlineKeyboardMarkup:

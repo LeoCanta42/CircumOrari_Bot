@@ -21,25 +21,12 @@ async def send_subscription_invoice(update: Update, context: ContextTypes.DEFAUL
     if not chat:
         return
 
-    price_eur = settings_repo.get_sub_price_eur()
     sub_days = settings_repo.get_sub_days()
-    currency = settings_repo.get_currency()
-    provider_token = settings_repo.get_payment_provider_token()
-
-    # Determine billing currency & amount
-    # If currency is XTR (Telegram Stars) or no provider token is provided, use Telegram Stars natively
-    if currency == "XTR" or not provider_token:
-        inv_currency = "XTR"
-        inv_token = ""  # Telegram Stars requires empty provider_token
-        stars_amount = settings_repo.get_sub_stars()
-        prices = [LabeledPrice(f"Abbonamento AI ({sub_days} giorni)", stars_amount)]
-        cost_label = f"{stars_amount} ⭐ (Telegram Stars)"
-    else:
-        inv_currency = "EUR"
-        inv_token = provider_token
-        cents = int(round(price_eur * 100))
-        prices = [LabeledPrice(f"Abbonamento AI ({sub_days} giorni)", cents)]
-        cost_label = f"{price_eur:.2f} €"
+    stars_amount = settings_repo.get_sub_stars()
+    inv_currency = "XTR"
+    inv_token = ""  # Telegram Stars requires empty provider_token
+    prices = [LabeledPrice(f"Abbonamento AI ({sub_days} giorni)", stars_amount)]
+    cost_label = f"{stars_amount} ⭐"
 
     title = f"Abbonamento Assistente AI ({sub_days}gg)"
     description = (
@@ -67,11 +54,11 @@ async def send_subscription_invoice(update: Update, context: ContextTypes.DEFAUL
         )
     except Exception as e:
         logger.error("Failed to send payment invoice to %s: %s", chat.id, e)
-        # Inform user clearly if payments provider is not configured
+        # Inform user clearly if invoice delivery fails
         err_msg = (
             "💳 *Attivazione Abbonamento AI*\n\n"
-            f"Il costo dell'abbonamento mensile ({sub_days} giorni effettivi) è di *{price_eur:.2f} €*.\n\n"
-            "I pagamenti elettronici sono in fase di attivazione su questo canale Telegram.\n"
+            f"Il costo dell'abbonamento ({sub_days} giorni effettivi) è di *{stars_amount} ⭐*.\n\n"
+            "Non è stato possibile recapitare la fattura Telegram Stars in questo momento.\n"
             f"Puoi comunicare il tuo Chat ID `{chat.id}` all'amministratore per l'abilitazione manuale immediata."
         )
         if update.callback_query:
@@ -110,13 +97,14 @@ async def ai_trial_activate_callback(update: Update, context: ContextTypes.DEFAU
     admin_flag = is_admin(chat_id)
 
     if not settings_repo.is_trial_enabled():
+        price_display = settings_repo.get_price_display()
         await query.edit_message_text(
             "⚠️ *Prova Gratuita non disponibile*\n\n"
             "La promozione di prova gratuita è temporaneamente disattivata.\n"
-            "Puoi attivare l'abbonamento mensile per soli 1€.",
+            f"Puoi attivare l'abbonamento per soli *{price_display}*.",
             reply_markup=ai_subscription_prompt_keyboard(
                 can_trial=False,
-                price_display=f"{settings_repo.get_sub_price_eur():.2f} €",
+                price_display=price_display,
                 sub_days=settings_repo.get_sub_days()
             ),
             parse_mode="Markdown"

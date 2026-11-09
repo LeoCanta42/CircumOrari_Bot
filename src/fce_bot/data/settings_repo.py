@@ -75,10 +75,8 @@ class SettingsRepository:
         return self.set("sub_stars", max(1, int(stars)))
 
     def get_price_display(self) -> str:
-        """Return formatted price string for UI depending on active currency."""
-        if self.get_currency() == "XTR":
-            return f"{self.get_sub_stars()} ⭐"
-        return f"{self.get_sub_price_eur():.2f} €"
+        """Return formatted price string for UI (strictly Telegram Stars)."""
+        return f"{self.get_sub_stars()} ⭐"
 
     def get_sub_days(self) -> int:
         """Get subscription duration in days (default 30 days)."""
@@ -120,20 +118,16 @@ class SettingsRepository:
         return self.set("trial_enabled", "1" if enabled else "0")
 
     def get_currency(self) -> str:
-        """Get billing currency: 'EUR' or 'XTR' (Telegram Stars)."""
-        raw = self.get("currency")
-        if raw:
-            curr = raw.strip().upper()
-            if curr in ("EUR", "XTR"):
-                return curr
-        return (settings.AI_CURRENCY or "EUR").upper()
+        """Get billing currency: strictly 'XTR' (Telegram Stars)."""
+        return "XTR"
 
     def set_currency(self, currency: str) -> bool:
-        """Set billing currency ('EUR' or 'XTR')."""
+        """Set billing currency. Only 'XTR' (Telegram Stars) is permitted."""
         curr = currency.strip().upper()
-        if curr not in ("EUR", "XTR"):
+        if curr != "XTR":
+            logger.warning("Attempted to set unsupported currency '%s'. Only 'XTR' is allowed.", currency)
             return False
-        return self.set("currency", curr)
+        return self.set("currency", "XTR")
 
     def get_payment_provider_token(self) -> str:
         """Get payment provider token for Telegram Bot Payments API."""
@@ -159,9 +153,6 @@ class SettingsRepository:
 
     def get_all_ai_settings(self) -> Dict[str, Any]:
         """Return dict summary of all current AI subscription and trial settings."""
-        token = self.get_payment_provider_token()
-        curr = self.get_currency()
-        has_token = bool(token)
         return {
             "sub_price_eur": self.get_sub_price_eur(),
             "sub_stars": self.get_sub_stars(),
@@ -169,12 +160,7 @@ class SettingsRepository:
             "sub_days": self.get_sub_days(),
             "trial_days": self.get_trial_days(),
             "trial_enabled": self.is_trial_enabled(),
-            "currency": curr,
-            "has_provider_token": has_token,
-            "provider_type": (
-                "Stripe / BotFather Provider (EUR)"
-                if (has_token and curr == "EUR")
-                else "Telegram Stars (⭐ XTR)" if curr == "XTR"
-                else "Non configurato (Stars fallback)"
-            )
+            "currency": "XTR",
+            "has_provider_token": False,
+            "provider_type": "Telegram Stars (⭐ XTR - Zero Config)",
         }

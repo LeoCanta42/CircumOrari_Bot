@@ -146,7 +146,7 @@ class Settings(BaseSettings):
     )
     AI_CURRENCY: str = Field(
         default="XTR",
-        description="Billing currency: XTR (Telegram Stars) or EUR (via payment provider)"
+        description="Billing currency: strictly Telegram Stars (XTR)"
     )
 
     # Vercel & Webhook configuration
