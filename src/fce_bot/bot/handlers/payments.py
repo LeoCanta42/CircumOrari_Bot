@@ -202,7 +202,8 @@ async def ai_sub_info_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             can_trial=can_trial,
             is_expired=status.get("is_expired", False),
             price_display=price_display,
-            sub_days=sub_days
+            sub_days=sub_days,
+            is_info_view=True
         ),
         parse_mode="Markdown"
     )

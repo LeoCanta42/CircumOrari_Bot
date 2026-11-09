@@ -46,7 +46,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.effective_message.reply_text(
             digest,
             parse_mode="Markdown",
-            reply_markup=subscription_manage_keyboard(is_sub),
+            reply_markup=subscription_manage_keyboard(is_sub, show_news_btn=False),
             disable_web_page_preview=True
         )
     except Exception as e:
@@ -54,7 +54,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         plain = digest.replace("*", "").replace("_", "")
         await update.effective_message.reply_text(
             plain,
-            reply_markup=subscription_manage_keyboard(is_sub),
+            reply_markup=subscription_manage_keyboard(is_sub, show_news_btn=False),
             disable_web_page_preview=True
         )
 
@@ -74,7 +74,7 @@ async def news_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await query.edit_message_text(
             digest,
             parse_mode="Markdown",
-            reply_markup=subscription_manage_keyboard(is_sub),
+            reply_markup=subscription_manage_keyboard(is_sub, show_news_btn=False),
             disable_web_page_preview=True
         )
     except Exception as e:
@@ -84,7 +84,7 @@ async def news_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         plain = digest.replace("*", "").replace("_", "")
         await query.edit_message_text(
             plain,
-            reply_markup=subscription_manage_keyboard(is_sub),
+            reply_markup=subscription_manage_keyboard(is_sub, show_news_btn=False),
             disable_web_page_preview=True
         )
 

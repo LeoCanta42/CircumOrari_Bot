@@ -50,6 +50,7 @@ async def documents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"📄 [Scarica PDF Metropolitana]({docs.metro_url})",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🚇 Scarica PDF Metro", url=docs.metro_url)],
+                [InlineKeyboardButton("📄 Tutti i Documenti PDF", callback_data="doc_all")],
                 [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
             ]),
             parse_mode="Markdown"
@@ -63,6 +64,7 @@ async def documents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"📄 [Scarica PDF Treni FCE]({docs.train_url})",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🚆 Scarica PDF Treni", url=docs.train_url)],
+                [InlineKeyboardButton("📄 Tutti i Documenti PDF", callback_data="doc_all")],
                 [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
             ]),
             parse_mode="Markdown"
@@ -76,6 +78,7 @@ async def documents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"📄 [Scarica PDF Autolinee FCE]({docs.bus_url})",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🚌 Scarica PDF Bus", url=docs.bus_url)],
+                [InlineKeyboardButton("📄 Tutti i Documenti PDF", callback_data="doc_all")],
                 [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
             ]),
             parse_mode="Markdown"

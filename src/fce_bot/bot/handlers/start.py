@@ -1,7 +1,7 @@
 """Handler for start, help, and navigation commands."""
 
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from fce_bot.bot.keyb import main_menu_keyboard
 from fce_bot.bot.handlers.admin import is_admin
@@ -104,10 +104,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /help command and 'help_info' callback."""
-    user = update.effective_user
-    chat = update.effective_chat
-    uid = getattr(user, "id", None) or (getattr(chat, "id", None) if chat else None)
-    admin_flag = is_admin(uid) if isinstance(uid, int) else False
+    help_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔍 Cerca Linea / Orari", callback_data="wizard_start")],
+        [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
+    ])
 
     if update.callback_query:
         query = update.callback_query
@@ -115,7 +115,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         try:
             await query.edit_message_text(
                 HELP_TEXT,
-                reply_markup=main_menu_keyboard(is_admin_user=admin_flag),
+                reply_markup=help_kb,
                 parse_mode="Markdown"
             )
         except Exception as e:
@@ -124,7 +124,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         await update.effective_message.reply_text(
             HELP_TEXT,
-            reply_markup=main_menu_keyboard(is_admin_user=admin_flag),
+            reply_markup=help_kb,
             parse_mode="Markdown"
         )
 

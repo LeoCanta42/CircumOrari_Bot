@@ -9,22 +9,15 @@ def main_menu_keyboard(is_admin_user: bool = False) -> InlineKeyboardMarkup:
     """Main dashboard menu buttons (includes Admin Panel button if user is an admin)."""
     rows = [
         [
-            InlineKeyboardButton("🚌 Orario Bus", callback_data="doc_bus"),
-            InlineKeyboardButton("🚆 Orario Treni", callback_data="doc_train"),
-        ],
-        [
-            InlineKeyboardButton("🚇 Orario Metro", callback_data="doc_metro"),
             InlineKeyboardButton("🔍 Cerca Linea / Orari", callback_data="wizard_start"),
+            InlineKeyboardButton("🤖 Assistente AI", callback_data="ai_help"),
         ],
         [
             InlineKeyboardButton("📢 Ultime Notizie", callback_data="news_latest"),
             InlineKeyboardButton("🔔 Notifiche & Avvisi", callback_data="news_sub_menu"),
         ],
         [
-            InlineKeyboardButton("🤖 Assistente AI", callback_data="ai_help"),
-            InlineKeyboardButton("📄 Documenti PDF", callback_data="doc_all"),
-        ],
-        [
+            InlineKeyboardButton("📄 Orari Ufficiali PDF", callback_data="doc_all"),
             InlineKeyboardButton("ℹ️ Guida & Info", callback_data="help_info"),
         ],
     ]
@@ -149,6 +142,11 @@ def admin_user_detail_keyboard(
         if is_sub
         else InlineKeyboardButton("🔔 Attiva Notifiche", callback_data=f"adm_u_sub:{cid}:1:{back_filter}:{back_page}")
     )
+    ai_btn = (
+        InlineKeyboardButton("🚫 Revoca AI", callback_data=f"adm_u_ai:{cid}:0:{back_filter}:{back_page}")
+        if is_ai
+        else InlineKeyboardButton("🟢 Abilita AI", callback_data=f"adm_u_ai:{cid}:1:{back_filter}:{back_page}")
+    )
 
     rows = [
         [
@@ -157,7 +155,7 @@ def admin_user_detail_keyboard(
         ],
         [
             InlineKeyboardButton("♾️ Accesso Illimitato", callback_data=f"adm_u_perm:{cid}:{back_filter}:{back_page}"),
-            InlineKeyboardButton("🚫 Revoca AI", callback_data=f"adm_u_ai:{cid}:0:{back_filter}:{back_page}"),
+            ai_btn,
         ],
         [
             InlineKeyboardButton(
@@ -189,23 +187,23 @@ def admin_ai_settings_keyboard(
     price = current_settings.get("sub_price_eur", 1.0)
     stars = current_settings.get("sub_stars", 50)
 
-    trial_toggle_label = "🎁 Prova 3gg: 🟢 ON (Attiva)" if trial_enabled else "🎁 Prova 3gg: 🔴 OFF (Spenta)"
+    trial_toggle_label = "🎁 Prova: 🟢 ON (Attiva)" if trial_enabled else "🎁 Prova: 🔴 OFF (Spenta)"
     curr_label = "💱 Valuta: ⭐ Telegram Stars (XTR)" if curr == "XTR" else "💱 Valuta: EUR (€)"
 
     if curr == "XTR":
         price_row = [
-            InlineKeyboardButton(f"⭐ Stars: {stars}", callback_data="noop"),
-            InlineKeyboardButton("1⭐ (Test)", callback_data="adm_ai_cfg:stars:1"),
-            InlineKeyboardButton("25⭐", callback_data="adm_ai_cfg:stars:25"),
-            InlineKeyboardButton("50⭐ (~1€)", callback_data="adm_ai_cfg:stars:50"),
-            InlineKeyboardButton("100⭐", callback_data="adm_ai_cfg:stars:100"),
+            InlineKeyboardButton("⭐ Stars", callback_data="noop"),
+            InlineKeyboardButton(f"{'✅ ' if stars == 1 else ''}1⭐ (Test)", callback_data="adm_ai_cfg:stars:1"),
+            InlineKeyboardButton(f"{'✅ ' if stars == 25 else ''}25⭐", callback_data="adm_ai_cfg:stars:25"),
+            InlineKeyboardButton(f"{'✅ ' if stars == 50 else ''}50⭐", callback_data="adm_ai_cfg:stars:50"),
+            InlineKeyboardButton(f"{'✅ ' if stars == 100 else ''}100⭐", callback_data="adm_ai_cfg:stars:100"),
         ]
     else:
         price_row = [
-            InlineKeyboardButton(f"💵 Prezzo: {price:.2f}€", callback_data="noop"),
-            InlineKeyboardButton("0.50€", callback_data="adm_ai_cfg:price:0.50"),
-            InlineKeyboardButton("1.00€", callback_data="adm_ai_cfg:price:1.00"),
-            InlineKeyboardButton("2.00€", callback_data="adm_ai_cfg:price:2.00"),
+            InlineKeyboardButton("💵 Prezzo", callback_data="noop"),
+            InlineKeyboardButton(f"{'✅ ' if price == 0.5 else ''}0.50€", callback_data="adm_ai_cfg:price:0.50"),
+            InlineKeyboardButton(f"{'✅ ' if price == 1.0 else ''}1.00€", callback_data="adm_ai_cfg:price:1.00"),
+            InlineKeyboardButton(f"{'✅ ' if price == 2.0 else ''}2.00€", callback_data="adm_ai_cfg:price:2.00"),
         ]
 
     return InlineKeyboardMarkup([
@@ -213,16 +211,16 @@ def admin_ai_settings_keyboard(
             InlineKeyboardButton(trial_toggle_label, callback_data="adm_ai_cfg:toggle_trial"),
         ],
         [
-            InlineKeyboardButton(f"⏱️ Prova: {trial_days}gg", callback_data="noop"),
-            InlineKeyboardButton("1gg", callback_data="adm_ai_cfg:trial_days:1"),
-            InlineKeyboardButton("3gg", callback_data="adm_ai_cfg:trial_days:3"),
-            InlineKeyboardButton("7gg", callback_data="adm_ai_cfg:trial_days:7"),
+            InlineKeyboardButton("⏱️ Prova", callback_data="noop"),
+            InlineKeyboardButton(f"{'✅ ' if trial_days == 1 else ''}1gg", callback_data="adm_ai_cfg:trial_days:1"),
+            InlineKeyboardButton(f"{'✅ ' if trial_days == 3 else ''}3gg", callback_data="adm_ai_cfg:trial_days:3"),
+            InlineKeyboardButton(f"{'✅ ' if trial_days == 7 else ''}7gg", callback_data="adm_ai_cfg:trial_days:7"),
         ],
         [
-            InlineKeyboardButton(f"📅 Mese: {sub_days}gg", callback_data="noop"),
-            InlineKeyboardButton("15gg", callback_data="adm_ai_cfg:sub_days:15"),
-            InlineKeyboardButton("30gg", callback_data="adm_ai_cfg:sub_days:30"),
-            InlineKeyboardButton("60gg", callback_data="adm_ai_cfg:sub_days:60"),
+            InlineKeyboardButton("📅 Periodo", callback_data="noop"),
+            InlineKeyboardButton(f"{'✅ ' if sub_days == 15 else ''}15gg", callback_data="adm_ai_cfg:sub_days:15"),
+            InlineKeyboardButton(f"{'✅ ' if sub_days == 30 else ''}30gg", callback_data="adm_ai_cfg:sub_days:30"),
+            InlineKeyboardButton(f"{'✅ ' if sub_days == 60 else ''}60gg", callback_data="adm_ai_cfg:sub_days:60"),
         ],
         price_row,
         [
@@ -241,7 +239,8 @@ def ai_subscription_prompt_keyboard(
     can_trial: bool = False,
     is_expired: bool = False,
     price_display: str = "1,00 €",
-    sub_days: int = 30
+    sub_days: int = 30,
+    is_info_view: bool = False
 ) -> InlineKeyboardMarkup:
     """Prompt keyboard presented to user for activating trial or purchasing monthly AI access."""
     rows = []
@@ -258,9 +257,14 @@ def ai_subscription_prompt_keyboard(
     rows.append([
         InlineKeyboardButton(btn_label, callback_data="ai_subscribe")
     ])
-    rows.append([
-        InlineKeyboardButton("ℹ️ Info Privacy & Abbonamento", callback_data="ai_sub_info"),
-    ])
+    if is_info_view:
+        rows.append([
+            InlineKeyboardButton("↩️ Torna all'Abbonamento", callback_data="ai_help"),
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton("ℹ️ Info Privacy & Abbonamento", callback_data="ai_sub_info"),
+        ])
     rows.append([
         InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main"),
     ])
@@ -283,18 +287,21 @@ def admin_user_delete_confirm_keyboard(
     ])
 
 
-def subscription_manage_keyboard(is_subscribed: bool) -> InlineKeyboardMarkup:
+def subscription_manage_keyboard(
+    is_subscribed: bool,
+    show_news_btn: bool = True
+) -> InlineKeyboardMarkup:
     """Keyboard for opting in/out of service news broadcasts."""
     if is_subscribed:
         action_btn = InlineKeyboardButton("🔕 Disattiva Notifiche", callback_data="sub_disable")
     else:
         action_btn = InlineKeyboardButton("🔔 Iscriviti agli Avvisi", callback_data="sub_enable")
 
-    return InlineKeyboardMarkup([
-        [action_btn],
-        [InlineKeyboardButton("📢 Leggi Ultime Notizie", callback_data="news_latest")],
-        [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
-    ])
+    rows = [[action_btn]]
+    if show_news_btn:
+        rows.append([InlineKeyboardButton("📢 Leggi Ultime Notizie", callback_data="news_latest")])
+    rows.append([InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")])
+    return InlineKeyboardMarkup(rows)
 
 
 def transport_select_keyboard() -> InlineKeyboardMarkup:

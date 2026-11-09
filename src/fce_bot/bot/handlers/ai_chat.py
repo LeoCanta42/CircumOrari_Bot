@@ -221,7 +221,10 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         await query.edit_message_text(
             help_msg,
-            reply_markup=main_menu_keyboard(is_admin_user=admin_flag),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 Cerca Linea / Orari", callback_data="wizard_start")],
+                [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
+            ]),
             parse_mode="Markdown"
         )
     except Exception as e:
