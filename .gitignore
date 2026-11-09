@@ -32,3 +32,6 @@ log.txt*
 # Backups & test scripts
 old_backup/
 *_test.py
+
+# AI
+.agents
