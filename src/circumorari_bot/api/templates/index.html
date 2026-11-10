@@ -7,27 +7,27 @@
     
     <!-- PWA & Mobile Web App Meta Tags -->
     <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="#991b1b">
+    <meta name="theme-color" content="#092644">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="CircumOrari">
     <meta name="application-name" content="CircumOrari">
     
-    <!-- Vector SVG Icon is preferred for sharp graphics on any device & resolution -->
-    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
-    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
-    <link rel="apple-touch-icon" href="/static/icons/icon.svg">
-    <link rel="apple-touch-icon" sizes="192x192" href="/static/icons/icon-192.png">
+    <!-- Vector SVG and high-res PNG icons with cache-busting -->
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg?v=3">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=3">
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=3">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png?v=3">
 
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #9e1b1b;
-            --primary-dark: #7f1515;
-            --primary-light: #fee2e2;
+            --primary: #092644;
+            --primary-dark: #05182d;
+            --primary-light: #e0f2fe;
             --secondary: #1e293b;
-            --accent: #2563eb;
+            --accent: #0284c7;
             --bg: #f8fafc;
             --card-bg: #ffffff;
             --text-main: #0f172a;
@@ -255,7 +255,7 @@
 
         /* Hero Banner */
         .hero {
-            background: linear-gradient(135deg, #881337 0%, #991b1b 50%, #b91c1c 100%);
+            background: linear-gradient(135deg, #092644 0%, #133e68 50%, #0284c7 100%);
             color: white;
             padding: 36px 16px 54px;
             text-align: center;
@@ -332,7 +332,7 @@
             background: var(--primary);
             color: white;
             border-color: var(--primary);
-            box-shadow: 0 2px 6px rgba(158, 27, 27, 0.25);
+            box-shadow: 0 2px 6px rgba(9, 38, 68, 0.25);
         }
         .transport-hint {
             font-size: 0.84rem;
@@ -403,7 +403,7 @@
         }
         .text-input:focus, .select-input:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(158, 27, 27, 0.12);
+            box-shadow: 0 0 0 3px rgba(9, 38, 68, 0.12);
         }
         .text-input.has-clear {
             padding-right: 38px;
@@ -432,7 +432,7 @@
         }
         .city-filter-select:focus, .city-filter-select.active-city {
             border-color: var(--primary);
-            background-color: #fff5f5;
+            background-color: #f0f9ff;
             color: var(--primary);
         }
         .input-clear-btn {
@@ -812,7 +812,7 @@
         }
         .doc-btn:hover {
             border-color: var(--primary);
-            background: #fef2f2;
+            background: #f0f9ff;
             color: var(--primary);
         }
         .doc-meta {
@@ -920,7 +920,7 @@
     <nav class="navbar">
         <div class="nav-container">
             <a href="/" class="brand">
-                <img src="/static/icons/icon.svg" class="brand-logo" alt="CircumOrari Logo" width="36" height="36">
+                <img src="/static/icons/icon-192.png?v=3" class="brand-logo" alt="CircumOrari Logo" width="36" height="36">
                 <div class="brand-text-container">
                     <span class="brand-title">Circumetnea Mobilità</span>
                     <span class="brand-sub">Ferrovia e Metro di Catania</span>
@@ -931,8 +931,8 @@
                     <span class="btn-text-full">📲 Scarica App</span>
                     <span class="btn-text-short">📲 App</span>
                 </button>
-                <a href="https://t.me/fce_app_bot" target="_blank" class="btn-telegram" title="Apri il Bot Telegram ufficiale">
-                    <span class="btn-text-full">📱 Bot Telegram (@fce_app_bot)</span>
+                <a href="https://t.me/circumorari_bot" target="_blank" class="btn-telegram" title="Apri il Bot Telegram ufficiale">
+                    <span class="btn-text-full">📱 Bot Telegram (@circumorari_bot)</span>
                     <span class="btn-text-med">📱 Telegram</span>
                     <span class="btn-text-short">📱 Bot</span>
                 </a>
@@ -945,7 +945,7 @@
         <div class="modal-card" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div style="display:flex; align-items:center; gap:10px;">
-                    <img src="/static/icons/icon.svg" width="32" height="32" class="brand-logo" alt="CircumOrari Logo">
+                    <img src="/static/icons/icon-192.png?v=3" width="32" height="32" class="brand-logo" alt="CircumOrari Logo">
                     <h3 class="modal-title">Installa l'App CircumOrari</h3>
                 </div>
                 <button type="button" class="modal-close" onclick="closePwaModal()">&times;</button>
@@ -1056,17 +1056,18 @@
             <div class="card-header">
                 <h2 class="card-title">🤖 Assistente di Viaggio AI</h2>
                 <p class="card-description">
-                    L'assistente conversazionale intelligente è disponibile su Telegram (<strong>@fce_app_bot</strong>) per gli utenti abilitati dall'amministratore.
+                    L'assistente conversazionale intelligente è disponibile su Telegram (<strong>@circumorari_bot</strong>) per gli utenti abilitati dall'amministratore.
                 </p>
             </div>
 
             <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 0.92rem; color: var(--text); line-height: 1.5; margin-bottom: 16px;">
                 💡 Sul web puoi calcolare direttamente e gratuitamente tutti gli itinerari, le corse e le fermate tramite il modulo di ricerca in alto.<br>
-                Se desideri testare l'assistente conversazionale in linguaggio naturale, puoi contattare l'amministratore indicando il tuo chat ID Telegram.
+                Se desideri testare l'assistente conversazionale in linguaggio naturale, puoi contattare l'amministratore indicando il tuo chat ID Telegram.<br>
+                ⚡ <em>Fair use</em>: per garantire risorse stabili ed eque per tutti i passeggeri, l'assistente AI applica un limite di <strong>3 richieste al minuto per utente</strong>.
             </div>
 
-            <a href="https://t.me/fce_app_bot" target="_blank" class="btn-submit" style="background-color: #0284c7; text-align: center; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; gap: 8px;">
-                💬 Apri Assistente su Telegram (@fce_app_bot)
+            <a href="https://t.me/circumorari_bot" target="_blank" class="btn-submit" style="background-color: #0284c7; text-align: center; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; gap: 8px;">
+                💬 Apri Assistente su Telegram (@circumorari_bot)
             </a>
         </section>
 
@@ -1622,7 +1623,7 @@
 
         // Ask AI assistant (Disabled from Web)
         async function askAI() {
-            alert("L'assistente conversazionale AI è disabilitato da web ed è disponibile solo su Telegram (@fce_app_bot) per gli utenti abilitati dall'amministratore.");
+            alert("L'assistente conversazionale AI è disabilitato da web ed è disponibile solo su Telegram (@circumorari_bot) per gli utenti abilitati dall'amministratore.");
         }
 
         // Load station list + city filters filtered by transport mode

@@ -13,21 +13,21 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from fce_bot.config import settings
-from fce_bot.data.users_repo import UsersRepository
-from fce_bot.bot.handlers.start import (
+from circumorari_bot.config import settings
+from circumorari_bot.data.users_repo import UsersRepository
+from circumorari_bot.bot.handlers.start import (
     start_command,
     help_command,
     chat_id_command,
     privacy_command,
     cancella_command,
 )
-from fce_bot.bot.handlers.timetable import (
+from circumorari_bot.bot.handlers.timetable import (
     viaggio_command,
     fermate_command,
     wizard_callback,
 )
-from fce_bot.bot.handlers.news import (
+from circumorari_bot.bot.handlers.news import (
     news_command,
     news_callback,
     news_sub_menu_callback,
@@ -36,9 +36,9 @@ from fce_bot.bot.handlers.news import (
     iscriviti_command,
     disiscriviti_command,
 )
-from fce_bot.bot.handlers.documents import documents_command, documents_callback
-from fce_bot.bot.handlers.ai_chat import ai_message_handler, ai_help_callback
-from fce_bot.bot.handlers.payments import (
+from circumorari_bot.bot.handlers.documents import documents_command, documents_callback
+from circumorari_bot.bot.handlers.ai_chat import ai_message_handler, ai_help_callback
+from circumorari_bot.bot.handlers.payments import (
     ai_subscribe_callback,
     ai_trial_activate_callback,
     ai_sub_info_callback,
@@ -46,7 +46,7 @@ from fce_bot.bot.handlers.payments import (
     successful_payment_handler,
     abbonamento_command,
 )
-from fce_bot.bot.handlers.admin import (
+from circumorari_bot.bot.handlers.admin import (
     admin_command,
     admin_callback,
     stats_command,

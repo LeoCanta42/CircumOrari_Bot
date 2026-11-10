@@ -4,7 +4,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from fce_bot.bot.keyb import (
+from circumorari_bot.bot.keyb import (
     filter_type_keyboard,
     hours_keyboard,
     main_menu_keyboard,
@@ -14,8 +14,8 @@ from fce_bot.bot.keyb import (
     transport_select_keyboard,
     trip_results_keyboard,
 )
-from fce_bot.core.models import FilterType, TransportType
-from fce_bot.services.transit_service import transit_service
+from circumorari_bot.core.models import FilterType, TransportType
+from circumorari_bot.services.transit_service import transit_service
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ async def viaggio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    from fce_bot.services.ai_service import ai_service
+    from circumorari_bot.services.ai_service import ai_service
 
     resp = ai_service.answer_query(text)
     await update.effective_message.reply_text(resp.answer, parse_mode="Markdown")

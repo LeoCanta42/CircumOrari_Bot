@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Generator, Iterable, List, Optional
 
-from fce_bot.config import settings
+from circumorari_bot.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def _is_serverless_env() -> bool:
 def get_db_path() -> Path:
     """Return GTFS SQLite database path, ensuring writable copy in /tmp on serverless environments."""
     if _is_serverless_env():
-        tmp_db = Path("/tmp/fce_lines.db")
+        tmp_db = Path("/tmp/circumorari_lines.db")
         if not tmp_db.exists():
             orig_db = settings.DATABASE_PATH
             if orig_db.exists():

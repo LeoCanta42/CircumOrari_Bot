@@ -7,7 +7,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-from fce_bot.cli import main
+from circumorari_bot.cli import main
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

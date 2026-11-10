@@ -3,12 +3,14 @@
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
-from fce_bot.services.ai_service import ai_service
-from fce_bot.data.users_repo import UsersRepository
-from fce_bot.data.settings_repo import SettingsRepository
-from fce_bot.bot.keyb import main_menu_keyboard, ai_subscription_prompt_keyboard
-from fce_bot.bot.handlers.admin import is_admin, handle_admin_text_input
-from fce_bot.bot.handlers.timetable import handle_wizard_text_input
+from circumorari_bot.config import settings
+from circumorari_bot.core.rate_limiter import ai_rate_limiter
+from circumorari_bot.services.ai_service import ai_service
+from circumorari_bot.data.users_repo import UsersRepository
+from circumorari_bot.data.settings_repo import SettingsRepository
+from circumorari_bot.bot.keyb import main_menu_keyboard, ai_subscription_prompt_keyboard
+from circumorari_bot.bot.handlers.admin import is_admin, handle_admin_text_input
+from circumorari_bot.bot.handlers.timetable import handle_wizard_text_input
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()
@@ -115,6 +117,28 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
+    # Rate limit check: fair-use maximum requests per user per minute (admins bypass)
+    if not admin_flag:
+        allowed, retry_after = ai_rate_limiter.check_rate_limit(
+            chat.id,
+            max_requests=settings.AI_RATE_LIMIT_PER_MINUTE,
+            window_seconds=settings.AI_RATE_LIMIT_WINDOW_SECONDS
+        )
+        if not allowed:
+            logger.info("Rate limit exceeded for user %s: retry after %ds", chat.id, retry_after)
+            rate_limit_msg = (
+                "⏳ *Limite di richieste raggiunto*\n\n"
+                "Per garantire un servizio equo e performante a tutti i passeggeri, "
+                f"l'Assistente AI è limitato a un massimo di *{settings.AI_RATE_LIMIT_PER_MINUTE} richieste al minuto* per utente.\n\n"
+                f"Per favore, attendi *{retry_after} secondi* prima di inviare una nuova domanda."
+            )
+            await message.reply_text(
+                rate_limit_msg,
+                parse_mode="Markdown",
+                reply_markup=main_menu_keyboard(is_admin_user=admin_flag)
+            )
+            return
+
     # Let the user know the bot is thinking
     await context.bot.send_chat_action(chat_id=chat.id, action="typing")
 
@@ -216,6 +240,7 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "• _\"Orari della littorina da Paternò a Randazzo verso le 16\"_\n"
         "• _\"A che ora c'è la metro da Monte Po a Borgo stasera alle 20?\"_\n"
         "• _\"Dove posso scaricare i pdf degli orari?\"_\n\n"
+        "⚡ *Fair use*: massimo 3 richieste al minuto per utente per garantire disponibilità e tempi di risposta ottimali.\n\n"
         "👉 Scrivi adesso la tua richiesta qui sotto!"
     )
     try:

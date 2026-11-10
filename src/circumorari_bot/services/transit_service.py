@@ -6,10 +6,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
-from fce_bot.core.models import FilterType, Itinerary, Stop, TransportType, TripSegment
-from fce_bot.core.time_utils import get_current_time_str
-from fce_bot.data.city_resolver import geocode_place_in_etna_area, haversine_meters
-from fce_bot.data.db import get_db, normalize_stop_name
+from circumorari_bot.core.models import FilterType, Itinerary, Stop, TransportType, TripSegment
+from circumorari_bot.core.time_utils import get_current_time_str
+from circumorari_bot.data.city_resolver import geocode_place_in_etna_area, haversine_meters
+from circumorari_bot.data.db import get_db, normalize_stop_name
 
 logger = logging.getLogger(__name__)
 

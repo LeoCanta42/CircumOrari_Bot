@@ -2,8 +2,8 @@
 
 import logging
 from typing import Optional, Dict, Any
-from fce_bot.config import settings
-from fce_bot.data.db import get_persistent_db
+from circumorari_bot.config import settings
+from circumorari_bot.data.db import get_persistent_db
 
 logger = logging.getLogger(__name__)
 

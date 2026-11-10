@@ -3,10 +3,10 @@
 import logging
 from telegram import Update, Bot
 from telegram.ext import ContextTypes
-from fce_bot.config import settings
-from fce_bot.services.news_service import news_service
-from fce_bot.data.users_repo import UsersRepository
-from fce_bot.bot.keyb import main_menu_keyboard, subscription_manage_keyboard
+from circumorari_bot.config import settings
+from circumorari_bot.services.news_service import news_service
+from circumorari_bot.data.users_repo import UsersRepository
+from circumorari_bot.bot.keyb import main_menu_keyboard, subscription_manage_keyboard
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()

@@ -5,11 +5,11 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 from telegram import Update, CallbackQuery, PreCheckoutQuery, Message, Chat, User
 
-from fce_bot.config import settings
-from fce_bot.data.db import get_persistent_db
-from fce_bot.data.users_repo import UsersRepository
-from fce_bot.data.settings_repo import SettingsRepository
-from fce_bot.bot.handlers.payments import (
+from circumorari_bot.config import settings
+from circumorari_bot.data.db import get_persistent_db
+from circumorari_bot.data.users_repo import UsersRepository
+from circumorari_bot.data.settings_repo import SettingsRepository
+from circumorari_bot.bot.handlers.payments import (
     send_subscription_invoice,
     ai_subscribe_callback,
     ai_trial_activate_callback,
@@ -18,7 +18,7 @@ from fce_bot.bot.handlers.payments import (
     successful_payment_handler,
     abbonamento_command,
 )
-from fce_bot.bot.handlers.admin import admin_callback, is_admin
+from circumorari_bot.bot.handlers.admin import admin_callback, is_admin
 
 
 def test_settings_repository_defaults_and_mutation():

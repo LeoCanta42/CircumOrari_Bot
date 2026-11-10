@@ -7,20 +7,20 @@ from datetime import datetime
 from types import SimpleNamespace
 import pytest
 
-import fce_bot.data.db as db_mod
-from fce_bot.config import sanitize_postgres_url, settings
-from fce_bot.data.city_resolver import enrich_stops_batch, resolve_stop_city
-from fce_bot.data.db import (
+import circumorari_bot.data.db as db_mod
+from circumorari_bot.config import sanitize_postgres_url, settings
+from circumorari_bot.data.city_resolver import enrich_stops_batch, resolve_stop_city
+from circumorari_bot.data.db import (
     _PgCompatConnection,
     _PgCompatRow,
     _convert_qmark_to_pyformat,
     get_db,
     get_persistence_status,
 )
-from fce_bot.data.gtfs_loader import load_gtfs_from_zip
-from fce_bot.data.users_repo import UsersRepository
-from fce_bot.core.models import NewsItem
-from fce_bot.services.news_service import NewsService
+from circumorari_bot.data.gtfs_loader import load_gtfs_from_zip
+from circumorari_bot.data.users_repo import UsersRepository
+from circumorari_bot.core.models import NewsItem
+from circumorari_bot.services.news_service import NewsService
 
 
 def test_sanitize_postgres_url_vercel_and_neon():
@@ -40,11 +40,11 @@ def test_sanitize_postgres_url_vercel_and_neon():
     assert cleaned2 == "postgresql://u:p@ep-test.neon.tech/dbname?sslmode=require"
 
     # Localhost does not force sslmode=require
-    local_url = "postgresql://postgres:postgres@localhost:5432/fce_test"
+    local_url = "postgresql://postgres:postgres@localhost:5432/circumorari_test"
     assert sanitize_postgres_url(local_url) == local_url
 
     assert sanitize_postgres_url("") is None
-    assert sanitize_postgres_url("sqlite:///fce_lines.db") is None
+    assert sanitize_postgres_url("sqlite:///circumorari_lines.db") is None
 
 
 def test_qmark_to_pyformat_conversion():
@@ -153,7 +153,7 @@ def test_postgres_compat_layer_survives_serverless_restarts(tmp_path, monkeypatc
     monkeypatch.setattr(
         settings,
         "DATABASE_URL",
-        "postgres://user:pass@ep-fce.eu-central-1.aws.neon.tech/neondb?pgbouncer=true",
+        "postgres://user:pass@ep-circumorari.eu-central-1.aws.neon.tech/neondb?pgbouncer=true",
     )
     monkeypatch.setenv("VERCEL", "1")
     db_mod._PG_SCHEMA_INITIALIZED_URL = None
@@ -230,7 +230,7 @@ def test_gtfs_city_enrichment_subtask(tmp_path):
 
     # Build minimal GTFS archive and load into fresh temp SQLite DB
     gtfs_zip = tmp_path / "sample_gtfs.zip"
-    test_db = tmp_path / "sample_fce.db"
+    test_db = tmp_path / "sample_circumorari.db"
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
@@ -273,7 +273,7 @@ def test_gtfs_city_enrichment_subtask(tmp_path):
 
 
 def test_all_production_stops_have_city_enriched():
-    """Verify bundled fce_lines.db has municipality enriched for every stop."""
+    """Verify bundled circumorari_lines.db has municipality enriched for every stop."""
     with get_db() as conn:
         total = conn.execute("SELECT count(*) FROM stops").fetchone()[0]
         missing = conn.execute("SELECT count(*) FROM stops WHERE city IS NULL OR city = ''").fetchone()[0]

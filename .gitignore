@@ -16,7 +16,7 @@ venv/
 private/
 module/private/
 
-# Databases & logs (except pre-seeded fce_lines.db)
+# Databases & logs (except pre-seeded circumorari_lines.db)
 users.db
 bot.log
 log.txt*

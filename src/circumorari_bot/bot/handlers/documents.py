@@ -3,8 +3,8 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from fce_bot.services.documents_service import documents_service
-from fce_bot.bot.keyb import documents_keyboard, main_menu_keyboard
+from circumorari_bot.services.documents_service import documents_service
+from circumorari_bot.bot.keyb import documents_keyboard, main_menu_keyboard
 
 logger = logging.getLogger(__name__)
 

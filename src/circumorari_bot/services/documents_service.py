@@ -3,8 +3,8 @@
 import logging
 import requests
 from bs4 import BeautifulSoup
-from fce_bot.config import settings
-from fce_bot.core.models import DocumentsInfo
+from circumorari_bot.config import settings
+from circumorari_bot.core.models import DocumentsInfo
 
 logger = logging.getLogger(__name__)
 

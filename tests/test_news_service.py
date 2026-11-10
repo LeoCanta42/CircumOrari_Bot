@@ -1,8 +1,8 @@
 """Unit tests for news service and document scrapers."""
 
 import pytest
-from fce_bot.services.news_service import news_service, clean_html
-from fce_bot.services.documents_service import documents_service
+from circumorari_bot.services.news_service import news_service, clean_html
+from circumorari_bot.services.documents_service import documents_service
 
 
 def test_clean_html():
@@ -22,8 +22,8 @@ def test_documents_urls():
 
 def test_news_item_formatting():
     """Verify Italian date formatting and WordPress boilerplate removal."""
-    from fce_bot.core.models import NewsItem
-    from fce_bot.bot.handlers.news import format_news_digest
+    from circumorari_bot.core.models import NewsItem
+    from circumorari_bot.bot.handlers.news import format_news_digest
 
     item = NewsItem(
         title="Abbonamenti UNICT FCE-AMTS 2026/2027",

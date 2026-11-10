@@ -13,8 +13,8 @@ if str(SRC_DIR) not in sys.path:
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fce_bot.config import settings
-from fce_bot.api.router import router
+from circumorari_bot.config import settings
+from circumorari_bot.api.router import router
 
 app = FastAPI(
     title="CircumOrari Transit & Bot API",

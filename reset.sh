@@ -9,7 +9,7 @@ cd "$SCRIPT_DIR"
 echo "🔄 Resetting CircumOrari Bot database and caches..."
 
 # Remove old databases if needed
-rm -f fce_lines.db users.db
+rm -f circumorari_lines.db users.db
 
 # Ensure virtualenv is active if it exists
 if [ -d ".venv" ]; then

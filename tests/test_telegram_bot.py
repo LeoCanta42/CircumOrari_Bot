@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from telegram import Update, CallbackQuery
-from fce_bot.core.models import TransportType, FilterType, Stop
-from fce_bot.bot.keyb import (
+from circumorari_bot.core.models import TransportType, FilterType, Stop
+from circumorari_bot.bot.keyb import (
     main_menu_keyboard,
     transport_select_keyboard,
     stop_letters_keyboard,
@@ -14,14 +14,14 @@ from fce_bot.bot.keyb import (
     trip_results_keyboard,
     subscription_manage_keyboard,
 )
-from fce_bot.bot.handlers.start import start_command, help_command, HELP_TEXT
-from fce_bot.bot.handlers.timetable import wizard_callback
-from fce_bot.bot.handlers.news import (
+from circumorari_bot.bot.handlers.start import start_command, help_command, HELP_TEXT
+from circumorari_bot.bot.handlers.timetable import wizard_callback
+from circumorari_bot.bot.handlers.news import (
     news_sub_menu_callback,
     sub_enable_callback,
     sub_disable_callback,
 )
-from fce_bot.data.users_repo import UsersRepository
+from circumorari_bot.data.users_repo import UsersRepository
 
 
 def test_help_text_markdown_syntax():
@@ -232,7 +232,7 @@ async def test_manual_news_subscription_flow():
 @pytest.mark.anyio
 async def test_bot_post_init_and_commands():
     """Verify bot application factory, public commands list, and post_init registration."""
-    from fce_bot.bot.bot_app import create_bot_application, post_init, PUBLIC_BOT_COMMANDS
+    from circumorari_bot.bot.bot_app import create_bot_application, post_init, PUBLIC_BOT_COMMANDS
 
     app = create_bot_application()
     assert app is not None
@@ -286,8 +286,8 @@ async def test_bot_post_init_and_commands():
 @pytest.mark.anyio
 async def test_channel_and_group_messages_are_strictly_ignored():
     """Verify bot never responds to messages from channels, groups, or channel posts."""
-    from fce_bot.bot.handlers.ai_chat import ai_message_handler
-    from fce_bot.bot.handlers.start import start_command
+    from circumorari_bot.bot.handlers.ai_chat import ai_message_handler
+    from circumorari_bot.bot.handlers.start import start_command
 
     # 1. Channel post update
     channel_update = MagicMock(spec=Update)
@@ -330,10 +330,10 @@ async def test_channel_and_group_messages_are_strictly_ignored():
 @pytest.mark.anyio
 async def test_ai_permission_flow_and_admin_commands():
     """Verify AI permission checking, unauthorized message blocking, and admin allow/disallow."""
-    from fce_bot.data.users_repo import UsersRepository
-    from fce_bot.bot.handlers.ai_chat import ai_message_handler
-    from fce_bot.bot.handlers.admin import allow_ai_command, disallow_ai_command, list_ai_command
-    from fce_bot.config import settings
+    from circumorari_bot.data.users_repo import UsersRepository
+    from circumorari_bot.bot.handlers.ai_chat import ai_message_handler
+    from circumorari_bot.bot.handlers.admin import allow_ai_command, disallow_ai_command, list_ai_command
+    from circumorari_bot.config import settings
 
     repo = UsersRepository()
     test_user_id = 777666555
@@ -398,8 +398,8 @@ async def test_ai_permission_flow_and_admin_commands():
         # Now test_user sends message again -> passes permission check and typing action is triggered
         msg.reply_text.reset_mock()
         with pytest.MonkeyPatch().context() as mp:
-            from fce_bot.core.models import AIQueryResponse
-            from fce_bot.services.ai_service import ai_service
+            from circumorari_bot.core.models import AIQueryResponse
+            from circumorari_bot.services.ai_service import ai_service
             mp.setattr(ai_service, "answer_query", lambda q: AIQueryResponse(answer="Ecco la risposta AI", itineraries_count=1))
             await ai_message_handler(update, context)
             context.bot.send_chat_action.assert_awaited_once_with(chat_id=test_user_id, action="typing")
@@ -418,8 +418,8 @@ async def test_ai_permission_flow_and_admin_commands():
 @pytest.mark.anyio
 async def test_admin_username_management_and_panel_flow():
     """Verify admin can search/view user by username, toggle AI & notifications, delete record, and use admin panel."""
-    from fce_bot.data.users_repo import UsersRepository
-    from fce_bot.bot.handlers.admin import (
+    from circumorari_bot.data.users_repo import UsersRepository
+    from circumorari_bot.bot.handlers.admin import (
         admin_command,
         admin_callback,
         user_command,
@@ -430,13 +430,13 @@ async def test_admin_username_management_and_panel_flow():
         unsub_user_command,
         delete_user_command,
     )
-    from fce_bot.bot.handlers.start import start_command
-    from fce_bot.bot.handlers.ai_chat import ai_message_handler
-    from fce_bot.config import settings
+    from circumorari_bot.bot.handlers.start import start_command
+    from circumorari_bot.bot.handlers.ai_chat import ai_message_handler
+    from circumorari_bot.config import settings
 
     repo = UsersRepository()
     target_id = 666555444
-    target_username = "mario_fce_test"
+    target_username = "mario_circumorari_test"
     admin_id = 111222333
     repo.delete_user(target_id)
 
@@ -491,7 +491,7 @@ async def test_admin_username_management_and_panel_flow():
         u_cb_data = [btn.callback_data for row in u_kb.inline_keyboard for btn in row]
         assert "adm_menu" not in u_cb_data
 
-        # 2. Admin looks up user by @username via /user @mario_fce_test
+        # 2. Admin looks up user by @username via /user @mario_circumorari_test
         admin_msg.reply_text.reset_mock()
         ctx.args = [f"@{target_username}"]
         await user_command(admin_start_upd, ctx)
@@ -585,7 +585,7 @@ async def test_admin_username_management_and_panel_flow():
         assert repo.get_user(target_id) is None
 
         # 6. Verify track_user_interaction saves any incoming private user with is_subscribed=0 and ai_allowed=0
-        from fce_bot.bot.bot_app import track_user_interaction
+        from circumorari_bot.bot.bot_app import track_user_interaction
         new_uid = 555444333
         repo.delete_user(new_uid)
         auto_upd = MagicMock(spec=Update)
@@ -596,7 +596,7 @@ async def test_admin_username_management_and_panel_flow():
         auto_upd.effective_chat = auto_chat
         auto_user = MagicMock()
         auto_user.id = new_uid
-        auto_user.username = "nuovo_utente_fce"
+        auto_user.username = "nuovo_utente_circumorari"
         auto_user.first_name = "Luca"
         auto_upd.effective_user = auto_user
         auto_msg = MagicMock()
@@ -604,10 +604,10 @@ async def test_admin_username_management_and_panel_flow():
         auto_upd.effective_message = auto_msg
 
         await track_user_interaction(auto_upd, ctx)
-        saved_u = repo.get_user("nuovo_utente_fce")
+        saved_u = repo.get_user("nuovo_utente_circumorari")
         assert saved_u is not None
         assert saved_u["chat_id"] == str(new_uid)
-        assert saved_u["username"] == "nuovo_utente_fce"
+        assert saved_u["username"] == "nuovo_utente_circumorari"
         assert saved_u["first_name"] == "Luca"
         assert saved_u["is_subscribed"] == 0
         assert saved_u["ai_allowed"] == 0
@@ -620,7 +620,7 @@ async def test_admin_username_management_and_panel_flow():
 
 def test_stop_cities_keyboard_and_20_per_page_pagination():
     """Verify Telegram Comune filter keyboard and enlarged 20-stops-per-page pagination."""
-    from fce_bot.bot.keyb import stop_cities_keyboard
+    from circumorari_bot.bot.keyb import stop_cities_keyboard
 
     mock_stops = [
         Stop(stop_id=str(i), stop_name=f"Fermata {i:02d}", normalized_name=f"FERMATA {i:02d}", city="Catania")
@@ -647,7 +647,7 @@ def test_stop_cities_keyboard_and_20_per_page_pagination():
 @pytest.mark.anyio
 async def test_wizard_city_filter_and_inline_text_search():
     """Verify selecting stops by Comune and typing stop names directly in chat (even without AI access)."""
-    from fce_bot.bot.handlers.ai_chat import ai_message_handler
+    from circumorari_bot.bot.handlers.ai_chat import ai_message_handler
 
     repo = UsersRepository()
     non_ai_uid = 444333222
@@ -696,6 +696,118 @@ async def test_wizard_city_filter_and_inline_text_search():
     btn_labels = [btn.text for row in kb.inline_keyboard for btn in row]
     assert any("Santa Sofia" in lbl for lbl in btn_labels)
     repo.delete_user(non_ai_uid)
+
+
+@pytest.mark.anyio
+async def test_ai_message_handler_rate_limiting(monkeypatch):
+    """Verify sliding-window rate limiting on AI messages: blocks 4th request and permits admin bypass."""
+    from circumorari_bot.data.users_repo import UsersRepository
+    from circumorari_bot.bot.handlers.ai_chat import ai_message_handler
+    from circumorari_bot.core.rate_limiter import ai_rate_limiter
+    from circumorari_bot.config import settings
+    from circumorari_bot.core.models import AIQueryResponse
+
+    monkeypatch.setattr(
+        "circumorari_bot.bot.handlers.ai_chat.ai_service.answer_query",
+        lambda text: AIQueryResponse(answer=f"Risposta mock per: {text}")
+    )
+
+    repo = UsersRepository()
+    test_user_id = 888777666
+    ai_rate_limiter.reset(test_user_id)
+    repo.delete_user(test_user_id)
+    repo.set_ai_allowed(test_user_id, True)  # Authorize AI access
+
+    try:
+        # 1. First 3 messages should be processed normally
+        for i in range(3):
+            upd = MagicMock(spec=Update)
+            upd.channel_post = None
+            chat = MagicMock()
+            chat.type = "private"
+            chat.id = test_user_id
+            upd.effective_chat = chat
+            user = MagicMock()
+            user.id = test_user_id
+            user.username = "test_rate_limited"
+            upd.effective_user = user
+            msg = MagicMock()
+            msg.text = f"Domanda numero {i+1} da Catania a Bronte"
+            msg.reply_text = AsyncMock()
+            upd.effective_message = msg
+            ctx = MagicMock()
+            ctx.bot.send_chat_action = AsyncMock()
+
+            await ai_message_handler(upd, ctx)
+            ctx.bot.send_chat_action.assert_awaited_once_with(chat_id=test_user_id, action="typing")
+            msg.reply_text.assert_awaited_once()
+            reply_text = msg.reply_text.call_args[0][0]
+            assert "Limite di richieste raggiunto" not in reply_text
+
+        # 2. 4th message should be immediately blocked by rate limiter
+        upd_blocked = MagicMock(spec=Update)
+        upd_blocked.channel_post = None
+        chat = MagicMock()
+        chat.type = "private"
+        chat.id = test_user_id
+        upd_blocked.effective_chat = chat
+        user = MagicMock()
+        user.id = test_user_id
+        upd_blocked.effective_user = user
+        msg_blocked = MagicMock()
+        msg_blocked.text = "Quarta domanda consecutiva"
+        msg_blocked.reply_text = AsyncMock()
+        upd_blocked.effective_message = msg_blocked
+        ctx_blocked = MagicMock()
+        ctx_blocked.bot.send_chat_action = AsyncMock()
+
+        await ai_message_handler(upd_blocked, ctx_blocked)
+        # Should NOT trigger typing action
+        ctx_blocked.bot.send_chat_action.assert_not_called()
+        msg_blocked.reply_text.assert_awaited_once()
+        blocked_text = msg_blocked.reply_text.call_args[0][0]
+        assert "Limite di richieste raggiunto" in blocked_text
+        assert "3 richieste al minuto" in blocked_text
+        assert "secondi" in blocked_text
+
+        # 3. Admin user bypasses rate limit
+        admin_id = 999111222
+        ai_rate_limiter.reset(admin_id)
+        repo.delete_user(admin_id)
+        repo.set_ai_allowed(admin_id, True)
+
+        orig_admins = settings.ADMIN_USER_IDS_RAW
+        settings.ADMIN_USER_IDS_RAW = str(admin_id)
+        try:
+            for j in range(4):
+                upd_adm = MagicMock(spec=Update)
+                upd_adm.channel_post = None
+                c_adm = MagicMock()
+                c_adm.type = "private"
+                c_adm.id = admin_id
+                upd_adm.effective_chat = c_adm
+                u_adm = MagicMock()
+                u_adm.id = admin_id
+                upd_adm.effective_user = u_adm
+                m_adm = MagicMock()
+                m_adm.text = f"Admin query {j+1}"
+                m_adm.reply_text = AsyncMock()
+                upd_adm.effective_message = m_adm
+                ctx_adm = MagicMock()
+                ctx_adm.bot.send_chat_action = AsyncMock()
+
+                await ai_message_handler(upd_adm, ctx_adm)
+                ctx_adm.bot.send_chat_action.assert_awaited_once()
+                m_adm.reply_text.assert_awaited_once()
+                assert "Limite di richieste raggiunto" not in m_adm.reply_text.call_args[0][0]
+        finally:
+            settings.ADMIN_USER_IDS_RAW = orig_admins
+            repo.delete_user(admin_id)
+            ai_rate_limiter.reset(admin_id)
+    finally:
+        repo.delete_user(test_user_id)
+        ai_rate_limiter.reset(test_user_id)
+
 
 
 

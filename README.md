@@ -23,6 +23,7 @@ Questo progetto è una riscrittura completa e architetturale del bot originale: 
     > *"Come posso andare da Catania a Bronte oggi alle 14:00?"*
     > *"Metro da Monte Po a Stesicoro verso le 9:00"*
   * L'assistente estrae origine, destinazione e orario, consulta il database GTFS e formula una risposta chiara ed accurata. Include un motore NLP integrato che funziona automaticamente anche se la chiave API non è ancora inserita.
+  * **Rate Limiting & Fair Use:** per garantire stabilità e risorse condivise, le richieste AI sono protette da un rate limiter thread-safe a finestra mobile (default: massimo **3 richieste al minuto per utente**, con notifica del tempo di attesa residuo e bypass automatico per gli amministratori).
 * **📢 Notizie e Avvisi in Tempo Reale:**
   * Monitoraggio automatico del feed RSS ufficiale `https://www.circumetnea.it/category/news/feed/`.
   * Rilevamento univoco degli articoli e trasmissione automatica al canale Telegram o agli utenti iscritti.
@@ -42,10 +43,11 @@ CircumOrari_Bot/
 ├── api/                          # Entry point per Vercel Serverless Functions
 │   └── index.py                  # Inizializzazione FastAPI (Webhook, Cron, REST API)
 ├── src/
-│   └── fce_bot/
+│   └── circumorari_bot/
 │       ├── config.py             # Gestione impostazioni (.env e pydantic-settings)
 │       ├── core/                 # Modelli di dominio Pydantic & Dataclass
-│       │   └── models.py         # Stop, Trip, Itinerary, NewsItem, TransportType
+│       │   ├── models.py         # Stop, Trip, Itinerary, NewsItem, TransportType
+│       │   └── rate_limiter.py   # Rate Limiter sliding-window per richieste AI
 │       ├── data/                 # Ingestione e persistenza dati
 │       │   ├── db.py             # Schema SQLite, indici e transazioni
 │       │   ├── gtfs_loader.py    # Download, estrazione e sincronizzazione GTFS
@@ -106,10 +108,12 @@ ADMIN_USER_IDS=123456789                    # Il tuo ID Telegram (ottienilo con 
 # Assistente AI (Google Gemini - gemini-3.5-flash-lite)
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash-lite
+AI_RATE_LIMIT_PER_MINUTE=3
+AI_RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
 ### 3. Sincronizzazione Orari GTFS
-Il database `fce_lines.db` è già pre-popolato nel repository con gli orari attuali. Puoi aggiornarlo in qualsiasi momento scaricando il pacchetto GTFS più recente:
+Il database `circumorari_lines.db` è già pre-popolato nel repository con gli orari attuali. Puoi aggiornarlo in qualsiasi momento scaricando il pacchetto GTFS più recente:
 
 ```bash
 python main.py sync-gtfs
@@ -149,7 +153,7 @@ Il progetto è nativamente predisposto per essere distribuito su **Vercel**.
 ### Come funziona su Vercel:
 1. **Webhook Telegram:** Invece del continuous polling (incompatibile con il serverless), Telegram invia ogni evento via HTTP POST a `/api/webhook`.
 2. **Vercel Cron:** La verifica delle notizie viene eseguita una volta al giorno (schedule `0 6 * * *`, conforme ai limiti degli account Vercel Hobby) invocando l'endpoint `/api/cron/news`.
-3. **Database SQLite GTFS (Sola Lettura):** Il file `fce_lines.db` (con tutte le fermate già arricchite per Comune) viene impacchettato direttamente nel bundle serverless e letto a velocità nativa (<1ms).
+3. **Database SQLite GTFS (Sola Lettura):** Il file `circumorari_lines.db` (con tutte le fermate già arricchite per Comune) viene impacchettato direttamente nel bundle serverless e letto a velocità nativa (<1ms).
 4. **Persistenza Permanente Utenti & News (Neon / Vercel Postgres):** Poiché il filesystem `/tmp` di Vercel viene azzerato ad ogni riavvio dei container serverless, gli utenti registrati (`users`) e la cache notizie (`news_cache`) vengono salvati in modo permanente su **PostgreSQL** (`POSTGRES_URL` / `DATABASE_URL`), con fallback automatico a SQLite in locale/Docker.
 
 ### Passaggi per il Deploy:

@@ -4,11 +4,11 @@ import logging
 import time
 from telegram import Update, LabeledPrice
 from telegram.ext import ContextTypes
-from fce_bot.config import settings
-from fce_bot.data.users_repo import UsersRepository
-from fce_bot.data.settings_repo import SettingsRepository
-from fce_bot.bot.keyb import main_menu_keyboard, ai_subscription_prompt_keyboard
-from fce_bot.bot.handlers.admin import is_admin
+from circumorari_bot.config import settings
+from circumorari_bot.data.users_repo import UsersRepository
+from circumorari_bot.data.settings_repo import SettingsRepository
+from circumorari_bot.bot.keyb import main_menu_keyboard, ai_subscription_prompt_keyboard
+from circumorari_bot.bot.handlers.admin import is_admin
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()

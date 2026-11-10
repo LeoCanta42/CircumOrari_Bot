@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from fce_bot.core.models import TransportType, FilterType, Stop
+from circumorari_bot.core.models import TransportType, FilterType, Stop
 
 
 def main_menu_keyboard(is_admin_user: bool = False) -> InlineKeyboardMarkup:

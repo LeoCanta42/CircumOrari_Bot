@@ -3,19 +3,19 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from fce_bot.config import settings
-from fce_bot.data.users_repo import UsersRepository
-from fce_bot.data.settings_repo import SettingsRepository
-from fce_bot.data.gtfs_loader import download_and_sync_gtfs
-from fce_bot.data.db import get_db, get_persistent_db, get_persistence_status
-from fce_bot.bot.keyb import (
+from circumorari_bot.config import settings
+from circumorari_bot.data.users_repo import UsersRepository
+from circumorari_bot.data.settings_repo import SettingsRepository
+from circumorari_bot.data.gtfs_loader import download_and_sync_gtfs
+from circumorari_bot.data.db import get_db, get_persistent_db, get_persistence_status
+from circumorari_bot.bot.keyb import (
     admin_panel_keyboard,
     admin_users_list_keyboard,
     admin_user_detail_keyboard,
     admin_user_delete_confirm_keyboard,
     admin_ai_settings_keyboard,
 )
-from fce_bot.bot.handlers.news import check_and_broadcast_news
+from circumorari_bot.bot.handlers.news import check_and_broadcast_news
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()

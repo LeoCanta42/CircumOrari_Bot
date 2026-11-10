@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: fce_telegram_bot
+    container_name: circumorari_telegram_bot
     restart: unless-stopped
     env_file:
       - .env
@@ -11,7 +11,7 @@ services:
 
   web:
     build: .
-    container_name: fce_web_api
+    container_name: circumorari_web_api
     restart: unless-stopped
     ports:
       - "8000:8000"

@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     )
 
     # Database configuration
-    DATABASE_PATH: Path = BASE_DIR / "fce_lines.db"
+    DATABASE_PATH: Path = BASE_DIR / "circumorari_lines.db"
     USERS_DATABASE_PATH: Path = BASE_DIR / "users.db"
     DATABASE_URL: Optional[str] = Field(
         default_factory=lambda: (
@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     # Circumetnea data endpoints
     CIRCUMETNEA_BASE_URL: str = "https://www.circumetnea.it"
     CIRCUMETNEA_LINES_URL: str = "https://www.circumetnea.it/le-nostre-linee/"
+    CIRCUMETNEA_GTFS_PAGE_URL: str = (
+        "https://www.circumetnea.it/pubblicazione-orari-del-trasporto-pubblico-locale-in-formato-gtfs/"
+    )
     CIRCUMETNEA_GTFS_URL: str = (
         "https://www.circumetnea.it/download/general-transit-feed-specification-fce-01-02-2025-28-02-2028/?wpdmdl=17798"
     )
@@ -118,6 +121,14 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GEMINI_API_KEY", "AI_API_KEY")
     )
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"
+    AI_RATE_LIMIT_PER_MINUTE: int = Field(
+        default=3,
+        description="Maximum AI requests per user per minute (sliding window)"
+    )
+    AI_RATE_LIMIT_WINDOW_SECONDS: int = Field(
+        default=60,
+        description="Rate limit sliding window duration in seconds"
+    )
 
     # AI Subscription & Payments Configuration
     PAYMENT_PROVIDER_TOKEN: Optional[str] = Field(
@@ -150,7 +161,7 @@ class Settings(BaseSettings):
     )
 
     # Vercel & Webhook configuration
-    WEBHOOK_URL: Optional[str] = None  # e.g. https://my-fce-bot.vercel.app/api/webhook
+    WEBHOOK_URL: Optional[str] = None  # e.g. https://circumorari.vercel.app/api/webhook
     WEBHOOK_SECRET: Optional[str] = None
     CRON_SECRET: Optional[str] = None
 

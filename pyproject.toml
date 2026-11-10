@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fce-bot"
+name = "circumorari-bot"
 version = "2.0.0"
 description = "Modern Telegram Bot and Transit Assistant for Ferrovia Circumetnea and Metropolitana di Catania"
 readme = "README.md"
@@ -31,10 +31,10 @@ dev = [
 ]
 
 [project.scripts]
-fce-bot = "fce_bot.cli:main"
+circumorari-bot = "circumorari_bot.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-fce_bot = ["api/templates/*.html", "data/*.json"]
+circumorari_bot = ["api/templates/*.html", "data/*.json"]

@@ -3,8 +3,8 @@
 import logging
 from typing import List, Optional, Any, Tuple
 from datetime import datetime, timedelta, timezone
-from fce_bot.config import settings
-from fce_bot.data.db import get_persistent_db as get_db
+from circumorari_bot.config import settings
+from circumorari_bot.data.db import get_persistent_db as get_db
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +196,7 @@ class UsersRepository:
         try:
             cid_int = int(chat_id)
             if cid_int in settings.admin_user_ids:
-                from fce_bot.data.settings_repo import SettingsRepository
+                from circumorari_bot.data.settings_repo import SettingsRepository
                 if not SettingsRepository(self.db_path).get_admin_ai_test_mode(cid_int):
                     return True
         except (ValueError, TypeError):
@@ -246,7 +246,7 @@ class UsersRepository:
         except (ValueError, TypeError):
             pass
 
-        from fce_bot.data.settings_repo import SettingsRepository
+        from circumorari_bot.data.settings_repo import SettingsRepository
         admin_test_mode = is_admin_user and SettingsRepository(self.db_path).get_admin_ai_test_mode(cid_str)
 
         user = self.get_user(cid_str)
@@ -316,7 +316,7 @@ class UsersRepository:
         try:
             cid_int = int(cid_str)
             if cid_int in settings.admin_user_ids:
-                from fce_bot.data.settings_repo import SettingsRepository
+                from circumorari_bot.data.settings_repo import SettingsRepository
                 SettingsRepository(self.db_path).set_admin_ai_test_mode(cid_int, not allowed)
         except (ValueError, TypeError):
             pass
@@ -356,7 +356,7 @@ class UsersRepository:
         try:
             cid_int = int(cid_str)
             if cid_int in settings.admin_user_ids:
-                from fce_bot.data.settings_repo import SettingsRepository
+                from circumorari_bot.data.settings_repo import SettingsRepository
                 SettingsRepository(self.db_path).set_admin_ai_test_mode(cid_int, False)
         except (ValueError, TypeError):
             pass

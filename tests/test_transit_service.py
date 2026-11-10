@@ -1,8 +1,8 @@
 """Unit tests for transit search and timetable calculation service."""
 
 import pytest
-from fce_bot.core.models import TransportType, FilterType
-from fce_bot.services.transit_service import transit_service
+from circumorari_bot.core.models import TransportType, FilterType
+from circumorari_bot.services.transit_service import transit_service
 
 
 def test_search_stops():
@@ -145,3 +145,138 @@ def test_city_filtering_and_disambiguated_stop_names():
     assert res_giarre.matched_stops[0].city == "Giarre"
     assert res_motta.matched_stops[0].city == "Motta Sant'Anastasia"
     assert set(res_giarre.stop_ids).isdisjoint(set(res_motta.stop_ids))
+
+
+def test_resolve_gtfs_url_success(monkeypatch):
+    """Verify dynamic scraping successfully discovers GTFS download link."""
+    from unittest.mock import MagicMock
+    import requests
+    from circumorari_bot.data.gtfs_loader import resolve_gtfs_url
+
+    mock_html = """
+    <html>
+        <body>
+            <h1>Pubblicazione Orari GTFS</h1>
+            <a href="/download/general-transit-feed-specification-fce-new/?wpdmdl=99999">
+                General Transit Feed Specification FCE - 2026/2027
+            </a>
+        </body>
+    </html>
+    """
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = mock_html
+    mock_resp.raise_for_status = MagicMock()
+
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: mock_resp)
+
+    url = resolve_gtfs_url("https://www.circumetnea.it/mock-gtfs-page/")
+    assert url == "https://www.circumetnea.it/download/general-transit-feed-specification-fce-new/?wpdmdl=99999"
+
+
+def test_resolve_gtfs_url_subpage_follow(monkeypatch):
+    """Verify resolving follows publication subpage link if scraped from index page."""
+    from unittest.mock import MagicMock
+    import requests
+    from circumorari_bot.data.gtfs_loader import resolve_gtfs_url
+
+    page1_html = """
+    <html>
+        <body>
+            <a href="/pubblicazione-orari-del-trasporto-pubblico-locale-in-formato-gtfs/">
+                Pubblicazione orari in formato GTFS
+            </a>
+        </body>
+    </html>
+    """
+    page2_html = """
+    <html>
+        <body>
+            <a href="https://www.circumetnea.it/download/gtfs-archive/?wpdmdl=88888">
+                Download GTFS Archive
+            </a>
+        </body>
+    </html>
+    """
+
+    def mock_get(url, *args, **kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        if "pubblicazione" in url:
+            resp.text = page2_html
+        else:
+            resp.text = page1_html
+        return resp
+
+    monkeypatch.setattr(requests, "get", mock_get)
+
+    url = resolve_gtfs_url("https://www.circumetnea.it/le-nostre-linee/")
+    assert url == "https://www.circumetnea.it/download/gtfs-archive/?wpdmdl=88888"
+
+
+def test_resolve_gtfs_url_fallback_on_error_and_empty(monkeypatch):
+    """Verify scraper gracefully falls back to settings.CIRCUMETNEA_GTFS_URL on network failure or empty links."""
+    import requests
+    from circumorari_bot.config import settings
+    from circumorari_bot.data.gtfs_loader import resolve_gtfs_url
+
+    # 1. Network exception
+    def mock_fail(*args, **kwargs):
+        raise requests.RequestException("Connection error")
+
+    monkeypatch.setattr(requests, "get", mock_fail)
+    url_err = resolve_gtfs_url()
+    assert url_err == settings.CIRCUMETNEA_GTFS_URL
+
+    # 2. HTML without GTFS links
+    from unittest.mock import MagicMock
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = "<html><body><p>No links here</p></body></html>"
+    mock_resp.raise_for_status = MagicMock()
+
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: mock_resp)
+    url_empty = resolve_gtfs_url()
+    assert url_empty == settings.CIRCUMETNEA_GTFS_URL
+
+
+def test_download_and_sync_gtfs_explicit_vs_resolved_url(monkeypatch):
+    """Verify download_and_sync_gtfs uses explicit URL or resolves dynamically."""
+    from unittest.mock import MagicMock
+    import requests
+    from circumorari_bot.data import gtfs_loader
+
+    resolve_called = []
+
+    def mock_resolve(page_url=None):
+        resolve_called.append(True)
+        return "https://www.circumetnea.it/dynamically-resolved-feed.zip"
+
+    monkeypatch.setattr(gtfs_loader, "resolve_gtfs_url", mock_resolve)
+    monkeypatch.setattr(gtfs_loader, "load_gtfs_from_zip", lambda *args, **kwargs: (10, 20, 30))
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = b"fake_zip"
+    mock_resp.raise_for_status = MagicMock()
+
+    fetched_urls = []
+
+    def mock_get(url, *args, **kwargs):
+        fetched_urls.append(url)
+        return mock_resp
+
+    monkeypatch.setattr(requests, "get", mock_get)
+
+    # Call with None -> should invoke resolve_gtfs_url
+    gtfs_loader.download_and_sync_gtfs(feed_url=None)
+    assert len(resolve_called) == 1
+    assert fetched_urls[-1] == "https://www.circumetnea.it/dynamically-resolved-feed.zip"
+
+    # Call with explicit URL -> should NOT invoke resolve_gtfs_url
+    explicit = "https://example.com/custom_feed.zip"
+    gtfs_loader.download_and_sync_gtfs(feed_url=explicit)
+    assert len(resolve_called) == 1  # count did not increase
+    assert fetched_urls[-1] == explicit
+

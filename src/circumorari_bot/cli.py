@@ -4,19 +4,19 @@ import sys
 import argparse
 import asyncio
 import logging
-from fce_bot.config import settings
+from circumorari_bot.config import settings
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
 )
-logger = logging.getLogger("fce_bot.cli")
+logger = logging.getLogger("circumorari_bot.cli")
 
 
 def run_bot() -> None:
     """Run Telegram bot using standard Long Polling (ideal for local/VPS/Docker)."""
     from telegram import Update
-    from fce_bot.bot.bot_app import create_bot_application
+    from circumorari_bot.bot.bot_app import create_bot_application
 
     if not settings.TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN is not configured! Please set it in .env")
@@ -34,25 +34,25 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False) ->
     uvicorn.run("api.index:app", host=host, port=port, reload=reload)
 
 
-def sync_gtfs() -> None:
+def sync_gtfs(feed_url: str = None) -> None:
     """Download and sync latest GTFS feed from circumetnea.it (including stop municipality enrichment)."""
-    from fce_bot.data.gtfs_loader import download_and_sync_gtfs
+    from circumorari_bot.data.gtfs_loader import download_and_sync_gtfs
     logger.info("Synchronizing GTFS feed...")
-    stops, trips, st = download_and_sync_gtfs()
+    stops, trips, st = download_and_sync_gtfs(feed_url=feed_url)
     logger.info("GTFS sync completed: %d stops, %d trips, %d stop_times", stops, trips, st)
 
 
 def enrich_cities() -> None:
     """Run municipality (Comune) enrichment subtask on existing GTFS stops."""
-    from fce_bot.data.gtfs_loader import enrich_existing_stops_cities
+    from circumorari_bot.data.gtfs_loader import enrich_existing_stops_cities
     updated = enrich_existing_stops_cities()
     logger.info("Municipality enrichment completed: %d stops enriched", updated)
 
 
 def check_news() -> None:
     """Check for new articles once and broadcast."""
-    from fce_bot.bot.bot_app import create_bot_application
-    from fce_bot.bot.handlers.news import check_and_broadcast_news
+    from circumorari_bot.bot.bot_app import create_bot_application
+    from circumorari_bot.bot.handlers.news import check_and_broadcast_news
 
     app = create_bot_application()
 
@@ -78,8 +78,8 @@ def run_news_worker(interval_seconds: int = 1800) -> None:
 
 def show_stats() -> None:
     """Print current system statistics."""
-    from fce_bot.data.users_repo import UsersRepository
-    from fce_bot.data.db import get_db, get_persistence_status
+    from circumorari_bot.data.users_repo import UsersRepository
+    from circumorari_bot.data.db import get_db, get_persistence_status
 
     repo = UsersRepository()
     stats = repo.get_stats()
@@ -114,7 +114,8 @@ def main() -> None:
     web_p.add_argument("--port", type=int, default=8000, help="Port")
     web_p.add_argument("--reload", action="store_true", help="Enable auto-reload")
 
-    subparsers.add_parser("sync-gtfs", help="Download and parse official GTFS feed")
+    sync_p = subparsers.add_parser("sync-gtfs", help="Download and parse official GTFS feed")
+    sync_p.add_argument("--url", default=None, help="Explicit GTFS feed URL (bypasses auto-scraping)")
     subparsers.add_parser("enrich-cities", help="Enrich GTFS stops with their municipality (Comune)")
     subparsers.add_parser("check-news", help="Check for new articles and broadcast")
     worker_p = subparsers.add_parser("news-worker", help="Run news polling loop daemon")
@@ -128,7 +129,7 @@ def main() -> None:
     elif args.command == "serve":
         run_server(host=args.host, port=args.port, reload=args.reload)
     elif args.command == "sync-gtfs":
-        sync_gtfs()
+        sync_gtfs(feed_url=args.url)
     elif args.command == "enrich-cities":
         enrich_cities()
     elif args.command == "check-news":

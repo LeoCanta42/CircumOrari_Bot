@@ -18,7 +18,7 @@ def test_health_endpoint():
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "healthy"
-    assert data["service"] == "fce-bot"
+    assert data["service"] == "circumorari-bot"
 
 
 def test_home_page():
@@ -94,27 +94,34 @@ def test_pwa_icons_dimensions_and_transparency():
 
 def test_pwa_manifest_and_sw():
     """Verify PWA manifest and service worker routes."""
-    # Manifest prioritizing SVG vector icon
+    # Manifest prioritizing SVG vector icon and navy theme color
     resp_m = client.get("/manifest.webmanifest")
     assert resp_m.status_code == 200
     m_data = resp_m.json()
     assert m_data["name"] == "Ferrovia Circumetnea & Metro"
     assert m_data["display"] == "standalone"
+    assert m_data["theme_color"] == "#092644"
     assert m_data["icons"][0]["src"] == "/static/icons/icon.svg"
     assert "svg" in m_data["icons"][0]["type"]
     assert len(m_data["icons"]) >= 3
 
-    # Service Worker
+    # Service Worker with bumped v3 cache
     resp_sw = client.get("/sw.js")
     assert resp_sw.status_code == 200
     assert "javascript" in resp_sw.headers["content-type"]
-    assert "CACHE_NAME" in resp_sw.text
+    assert "circumorari-pwa-v3" in resp_sw.text
     assert resp_sw.headers.get("service-worker-allowed") == "/"
 
     # Static Icon
     resp_icon = client.get("/static/icons/icon.svg")
     assert resp_icon.status_code == 200
     assert "svg" in resp_icon.headers["content-type"]
+
+    # Web App homepage styling and cache-busted icon links
+    resp_html = client.get("/")
+    assert resp_html.status_code == 200
+    assert 'content="#092644"' in resp_html.text
+    assert 'icon-192.png?v=3' in resp_html.text
 
 
 def test_api_stops():
@@ -189,7 +196,7 @@ def test_api_ai_ask():
 
 def test_gdpr_user_erasure_and_manual_opt_in():
     """Verify GDPR right to erasure (Art. 17) and explicit news opt-in in UsersRepository."""
-    from fce_bot.data.users_repo import UsersRepository
+    from circumorari_bot.data.users_repo import UsersRepository
     repo = UsersRepository()
     test_chat_id = 999888777
 
@@ -216,7 +223,7 @@ def test_gdpr_user_erasure_and_manual_opt_in():
 
 def test_admin_security_by_default():
     """Verify that unconfigured admin list securely rejects unauthorized users."""
-    from fce_bot.bot.handlers.admin import is_admin
+    from circumorari_bot.bot.handlers.admin import is_admin
     # When admin_user_ids is empty, any random ID must be rejected
     assert is_admin(123456789) is False
 
@@ -264,7 +271,7 @@ def test_web_ui_city_filters_and_stop_picker_present():
 
 def test_telegram_webhook_secret_auth():
     """Verify webhook secret verification returns 403 on invalid secret."""
-    from fce_bot.config import settings
+    from circumorari_bot.config import settings
 
     orig_secret = settings.WEBHOOK_SECRET
     try:
@@ -289,10 +296,10 @@ def test_telegram_webhook_pre_checkout_and_event_loop_isolation():
     """Verify multiple webhook invocations across separate asyncio event loops succeed without 'Event loop is closed'."""
     import asyncio
     from unittest.mock import patch, AsyncMock
-    from fce_bot.api import router as router_mod
-    from fce_bot.bot.bot_app import create_bot_application
-    from fce_bot.config import settings
-    from fce_bot.data.users_repo import UsersRepository
+    from circumorari_bot.api import router as router_mod
+    from circumorari_bot.bot.bot_app import create_bot_application
+    from circumorari_bot.config import settings
+    from circumorari_bot.data.users_repo import UsersRepository
 
     orig_token = settings.TELEGRAM_BOT_TOKEN
     orig_secret = settings.WEBHOOK_SECRET
@@ -469,8 +476,8 @@ def test_telegram_webhook_pre_checkout_and_event_loop_isolation():
 def test_telegram_webhook_auto_sync_allowed_updates():
     """Verify automatic allowed_updates self-healing when pre_checkout_query is missing."""
     from unittest.mock import patch, AsyncMock, MagicMock
-    from fce_bot.api import router as router_mod
-    from fce_bot.config import settings
+    from circumorari_bot.api import router as router_mod
+    from circumorari_bot.config import settings
 
     orig_secret = settings.WEBHOOK_SECRET
     orig_url = settings.WEBHOOK_URL
@@ -478,17 +485,17 @@ def test_telegram_webhook_auto_sync_allowed_updates():
 
     try:
         settings.WEBHOOK_SECRET = "sync_secret"
-        settings.WEBHOOK_URL = "https://fce-bot.vercel.app/api/webhook"
+        settings.WEBHOOK_URL = "https://circumorari.vercel.app/api/webhook"
         router_mod._webhook_updates_synced = False
 
         info_before = MagicMock()
-        info_before.url = "https://fce-bot.vercel.app/api/webhook"
+        info_before.url = "https://circumorari.vercel.app/api/webhook"
         info_before.allowed_updates = ["message", "callback_query"]  # missing pre_checkout_query!
         info_before.pending_update_count = 0
         info_before.last_error_message = None
 
         info_after = MagicMock()
-        info_after.url = "https://fce-bot.vercel.app/api/webhook"
+        info_after.url = "https://circumorari.vercel.app/api/webhook"
         info_after.allowed_updates = router_mod.ALLOWED_TELEGRAM_UPDATES
         info_after.pending_update_count = 0
         info_after.last_error_message = None
@@ -500,7 +507,7 @@ def test_telegram_webhook_auto_sync_allowed_updates():
         mock_app.bot.get_webhook_info = AsyncMock(side_effect=[info_before, info_after])
         mock_app.bot.set_webhook = AsyncMock(return_value=True)
 
-        with patch("fce_bot.api.router.get_telegram_app", return_value=mock_app):
+        with patch("circumorari_bot.api.router.get_telegram_app", return_value=mock_app):
             resp = client.get("/api/health?sync_webhook=true")
 
         assert resp.status_code == 200
@@ -510,7 +517,7 @@ def test_telegram_webhook_auto_sync_allowed_updates():
         assert "pre_checkout_query" in data["webhook"]["allowed_updates"]
 
         mock_app.bot.set_webhook.assert_awaited_once_with(
-            url="https://fce-bot.vercel.app/api/webhook",
+            url="https://circumorari.vercel.app/api/webhook",
             allowed_updates=router_mod.ALLOWED_TELEGRAM_UPDATES,
             secret_token="sync_secret",
         )

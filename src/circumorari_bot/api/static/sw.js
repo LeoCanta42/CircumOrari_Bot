@@ -1,5 +1,5 @@
 // CircumOrari & Metro PWA Service Worker
-const CACHE_NAME = 'fce-pwa-v2';
+const CACHE_NAME = 'circumorari-pwa-v3';
 const PRECACHE_URLS = [
     '/',
     '/manifest.webmanifest',

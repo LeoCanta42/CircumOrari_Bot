@@ -7,9 +7,9 @@ from typing import List, Optional
 import requests
 from bs4 import BeautifulSoup
 
-from fce_bot.config import settings
-from fce_bot.core.models import NewsItem
-from fce_bot.data.db import get_persistent_db as get_db
+from circumorari_bot.config import settings
+from circumorari_bot.core.models import NewsItem
+from circumorari_bot.data.db import get_persistent_db as get_db
 
 logger = logging.getLogger(__name__)
 

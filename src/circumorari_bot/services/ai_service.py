@@ -8,18 +8,18 @@ from typing import Any, List, Optional
 
 import requests
 
-from fce_bot.config import settings
-from fce_bot.core.models import AIQueryResponse, FilterType, TransportType
-from fce_bot.core.time_utils import (
+from circumorari_bot.config import settings
+from circumorari_bot.core.models import AIQueryResponse, FilterType, TransportType
+from circumorari_bot.core.time_utils import (
     TIME_DELIMITERS_PATTERN,
     get_current_time_str,
     get_local_now,
     resolve_query_time,
 )
-from fce_bot.data.city_resolver import geocode_place_in_etna_area
-from fce_bot.data.db import get_db, normalize_stop_name
-from fce_bot.services.documents_service import documents_service
-from fce_bot.services.transit_service import LocationResolution, transit_service
+from circumorari_bot.data.city_resolver import geocode_place_in_etna_area
+from circumorari_bot.data.db import get_db, normalize_stop_name
+from circumorari_bot.services.documents_service import documents_service
+from circumorari_bot.services.transit_service import LocationResolution, transit_service
 
 logger = logging.getLogger(__name__)
 

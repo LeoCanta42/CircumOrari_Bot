@@ -8,16 +8,16 @@ from fastapi import APIRouter, Request, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from telegram import Update
 
-from fce_bot.config import settings
-from fce_bot.core.models import TransportType, FilterType, AIQueryRequest, AIQueryResponse, NewsItem, DocumentsInfo
-from fce_bot.services.transit_service import transit_service
-from fce_bot.services.news_service import news_service
-from fce_bot.services.documents_service import documents_service
-from fce_bot.services.ai_service import ai_service
-from fce_bot.bot.bot_app import create_bot_application
-from fce_bot.bot.handlers.news import check_and_broadcast_news
-from fce_bot.data.db import get_persistence_status
-from fce_bot.data.users_repo import UsersRepository
+from circumorari_bot.config import settings
+from circumorari_bot.core.models import TransportType, FilterType, AIQueryRequest, AIQueryResponse, NewsItem, DocumentsInfo
+from circumorari_bot.services.transit_service import transit_service
+from circumorari_bot.services.news_service import news_service
+from circumorari_bot.services.documents_service import documents_service
+from circumorari_bot.services.ai_service import ai_service
+from circumorari_bot.bot.bot_app import create_bot_application
+from circumorari_bot.bot.handlers.news import check_and_broadcast_news
+from circumorari_bot.data.db import get_persistence_status
+from circumorari_bot.data.users_repo import UsersRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -331,7 +331,7 @@ async def ai_trip_advisor(req: AIQueryRequest) -> AIQueryResponse:
     """Natural Language Trip Planning Assistant API (Disabled from Web)."""
     raise HTTPException(
         status_code=403,
-        detail="L'accesso all'assistente AI da web è disabilitato. L'assistente è disponibile esclusivamente su Telegram (@fce_app_bot) per gli utenti autorizzati dall'amministratore."
+        detail="L'accesso all'assistente AI da web è disabilitato. L'assistente è disponibile esclusivamente su Telegram (@circumorari_bot) per gli utenti autorizzati dall'amministratore."
     )
 
 
@@ -341,7 +341,7 @@ async def health_check(sync_webhook: bool = Query(False)):
     p_status = get_persistence_status()
     result: Dict[str, Any] = {
         "status": "healthy",
-        "service": "fce-bot",
+        "service": "circumorari-bot",
         "version": "2.0.0",
         "storage_backend": p_status["backend"],
         "permanent_storage": p_status["permanent"],
@@ -376,7 +376,7 @@ async def web_manifest():
         "scope": "/",
         "display": "standalone",
         "background_color": "#ffffff",
-        "theme_color": "#991b1b",
+        "theme_color": "#092644",
         "orientation": "portrait-primary",
         "icons": [
             {

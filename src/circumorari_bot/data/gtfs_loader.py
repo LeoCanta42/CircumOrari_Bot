@@ -4,13 +4,15 @@ import io
 import csv
 import zipfile
 import logging
-import requests
 from pathlib import Path
 from typing import Optional, Tuple
-from fce_bot.config import settings
-from fce_bot.core.models import TransportType
-from fce_bot.data.db import get_db, init_db, normalize_stop_name
-from fce_bot.data.city_resolver import enrich_stops_batch, resolve_stop_city
+from urllib.parse import urljoin
+import requests
+from bs4 import BeautifulSoup
+from circumorari_bot.config import settings
+from circumorari_bot.core.models import TransportType
+from circumorari_bot.data.db import get_db, init_db, normalize_stop_name
+from circumorari_bot.data.city_resolver import enrich_stops_batch, resolve_stop_city
 
 logger = logging.getLogger(__name__)
 
@@ -167,9 +169,64 @@ def enrich_existing_stops_cities(db_path: Optional[Path] = None, allow_network: 
     return updated
 
 
+def resolve_gtfs_url(page_url: Optional[str] = None) -> str:
+    """Dynamically scrape and resolve the latest GTFS feed download URL from circumetnea.it."""
+    target_page = page_url or settings.CIRCUMETNEA_GTFS_PAGE_URL
+    headers = {"User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"}
+
+    try:
+        logger.info("Resolving GTFS download link from %s...", target_page)
+        resp = requests.get(target_page, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        subpage_link = None
+        for a in soup.find_all("a", href=True):
+            href = a["href"].strip()
+            if not href:
+                continue
+            text = (a.get_text() or "").strip().lower()
+            href_lower = href.lower()
+
+            # Direct download link detection
+            is_download = "download" in href_lower or "wpdmdl=" in href_lower or ".zip" in href_lower
+            has_gtfs_keyword = any(
+                k in href_lower or k in text
+                for k in ("general-transit", "transit-feed", "gtfs")
+            )
+            if is_download and has_gtfs_keyword:
+                full_url = urljoin(target_page, href)
+                logger.info("Dynamically resolved GTFS download URL: %s", full_url)
+                return full_url
+
+            # Secondary subpage link (e.g. if scraping "le nostre linee" or open-data index)
+            if "gtfs" in href_lower and ("pubblicazione" in href_lower or "open-data" in href_lower):
+                subpage_link = urljoin(target_page, href)
+
+        # If a GTFS publication subpage was found and not yet visited, follow it
+        if subpage_link and subpage_link != target_page:
+            logger.info("Following GTFS publication page link: %s", subpage_link)
+            return resolve_gtfs_url(page_url=subpage_link)
+
+        logger.warning(
+            "No GTFS download link found on %s, falling back to configured default: %s",
+            target_page,
+            settings.CIRCUMETNEA_GTFS_URL,
+        )
+        return settings.CIRCUMETNEA_GTFS_URL
+    except Exception as e:
+        logger.warning(
+            "Failed to dynamically scrape GTFS download URL from %s (%s). Falling back to default: %s",
+            target_page,
+            e,
+            settings.CIRCUMETNEA_GTFS_URL,
+        )
+        return settings.CIRCUMETNEA_GTFS_URL
+
+
 def download_and_sync_gtfs(feed_url: Optional[str] = None, db_path: Optional[Path] = None) -> Tuple[int, int, int]:
     """Download latest official GTFS feed from circumetnea.it and sync SQLite."""
-    url = feed_url or settings.CIRCUMETNEA_GTFS_URL
+    url = feed_url or resolve_gtfs_url()
     logger.info("Downloading GTFS feed from %s...", url)
     headers = {"User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"}
     resp = requests.get(url, headers=headers, timeout=60)

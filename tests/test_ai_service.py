@@ -1,15 +1,15 @@
 """Unit tests for AI trip planning assistant and entity extractor."""
 
 import pytest
-from fce_bot.core.models import TransportType
-from fce_bot.services.ai_service import ai_service
-from fce_bot.data.db import normalize_stop_name
+from circumorari_bot.core.models import TransportType
+from circumorari_bot.services.ai_service import ai_service
+from circumorari_bot.data.db import normalize_stop_name
 
 
 @pytest.fixture(autouse=True)
 def isolate_ai_settings(monkeypatch):
     """Ensure tests in this module run offline without live LLM calls."""
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
 
 
 def test_extract_entities_standard_format():
@@ -34,7 +34,7 @@ def test_extract_entities_metro():
 
 def test_ai_answer_query(monkeypatch):
     """Verify answer generation with factual itineraries."""
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
     text = "Da Paterno a Randazzo alle 08:30"
     resp = ai_service.answer_query(text)
     assert resp.origin is not None
@@ -83,7 +83,7 @@ def test_ai_arrival_query_varied_phrasing():
 
 def test_ai_imprecise_stop_catania_santa_sofia(monkeypatch):
     """Verify AI trip assistant resolves similar stop names like 'Catania Santa Sofia' -> 'Parcheggio Santa Sofia'."""
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
     resp = ai_service.answer_query("Come posso andare da Catania Santa Sofia a Stesicoro alle 09:00?")
     assert resp.itineraries_count > 0
     assert "santa sofia" in (resp.origin or "").lower()
@@ -93,7 +93,7 @@ def test_ai_imprecise_stop_catania_santa_sofia(monkeypatch):
 
 def test_ai_landmark_nearest_stop_query(monkeypatch):
     """Verify AI trip assistant resolves places/addresses to the nearest stop and computes the route."""
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
     resp = ai_service.answer_query("Come arrivo da Piazza Duomo Catania a Paternò alle 09:00?")
     assert resp.itineraries_count > 0
     assert "stesicoro" in resp.answer.lower()
@@ -102,7 +102,7 @@ def test_ai_landmark_nearest_stop_query(monkeypatch):
 
 def test_ai_line_path_tracing_query(monkeypatch):
     """Verify AI trip assistant can trace the stops along a line."""
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
     resp = ai_service.answer_query("Quali fermate fa la metropolitana di Catania?")
     assert "monte po" in resp.answer.lower()
     assert "borgo" in resp.answer.lower()
@@ -116,7 +116,7 @@ def test_ai_query_without_time_defaults_to_now(monkeypatch):
     fixed_now = datetime(2026, 11, 9, 13, 15, tzinfo=ZoneInfo("Europe/Rome"))
 
     # Test rule-based extraction
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
     query = "Voglio andare a Paterno' dalla Torre Biologica"
     entities = ai_service.extract_entities(query, now=fixed_now)
     assert entities.origin is not None and "torre biologica" in entities.origin.lower()
@@ -135,7 +135,7 @@ def test_ai_query_asap_and_relative_time(monkeypatch):
     from datetime import datetime
     from zoneinfo import ZoneInfo
     fixed_now = datetime(2026, 11, 9, 13, 15, tzinfo=ZoneInfo("Europe/Rome"))
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
 
     # 1. 'il prima possibile'
     q_asap = "Voglio andare a Paterno' dalla Torre Biologica il prima possibile"
@@ -172,11 +172,62 @@ def test_ai_late_night_query_morning_fallback(monkeypatch):
     from datetime import datetime
     from zoneinfo import ZoneInfo
     late_now = datetime(2026, 11, 9, 23, 30, tzinfo=ZoneInfo("Europe/Rome"))
-    monkeypatch.setattr("fce_bot.services.ai_service.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("circumorari_bot.services.ai_service.settings.GEMINI_API_KEY", None)
 
     query = "Voglio andare a Paterno' dalla Torre Biologica"
     resp = ai_service.answer_query(query, now=late_now)
     assert resp.time == "23:30"
     assert resp.itineraries_count > 0
     assert any(w in resp.answer.lower() for w in ["prime corse", "mattina", "terminato"])
+
+
+def test_ai_rate_limiter_sliding_window():
+    """Verify thread-safe sliding window rate limiting for AI requests."""
+    from circumorari_bot.core.rate_limiter import AIRateLimiter
+
+    limiter = AIRateLimiter()
+    user_id = 12345
+    t0 = 1000.0
+
+    # 1. First 3 requests at t0 are permitted
+    allowed, retry = limiter.check_rate_limit(user_id, max_requests=3, window_seconds=60, current_time=t0)
+    assert allowed is True
+    assert retry == 0
+
+    allowed, retry = limiter.check_rate_limit(user_id, max_requests=3, window_seconds=60, current_time=t0 + 10)
+    assert allowed is True
+    assert retry == 0
+
+    allowed, retry = limiter.check_rate_limit(user_id, max_requests=3, window_seconds=60, current_time=t0 + 20)
+    assert allowed is True
+    assert retry == 0
+
+    # 2. 4th request at t0 + 25 is blocked with retry_after = 60 - 25 = 35 seconds
+    allowed, retry = limiter.check_rate_limit(user_id, max_requests=3, window_seconds=60, current_time=t0 + 25)
+    assert allowed is False
+    assert retry == 35
+
+    # 3. Independent users do not affect each other
+    other_user = 67890
+    allowed_other, retry_other = limiter.check_rate_limit(other_user, max_requests=3, window_seconds=60, current_time=t0 + 25)
+    assert allowed_other is True
+    assert retry_other == 0
+
+    # 4. After the first request expires (t0 + 61), a new slot becomes available
+    allowed, retry = limiter.check_rate_limit(user_id, max_requests=3, window_seconds=60, current_time=t0 + 61)
+    assert allowed is True
+    assert retry == 0
+
+    # 5. Reset single user
+    limiter.reset(user_id)
+    # User can now execute 3 requests again
+    for _ in range(3):
+        ok, _ = limiter.check_rate_limit(user_id, max_requests=3, window_seconds=60, current_time=t0 + 62)
+        assert ok is True
+
+    # 6. Global reset
+    limiter.reset()
+    ok, _ = limiter.check_rate_limit(other_user, max_requests=3, window_seconds=60, current_time=t0 + 25)
+    assert ok is True
+
 

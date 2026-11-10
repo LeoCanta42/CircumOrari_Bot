@@ -16,7 +16,7 @@ You are the **Lead Developer** for the **CircumOrari Bot** project. Your job is 
   - `python-telegram-bot` (v20+ async with `Application`, `Update`, `ContextTypes`)
   - `FastAPI` / `Starlette` / `Uvicorn` for web APIs and webhook endpoints
 - **Database**:
-  - `SQLite` (local development fallback: `fce_lines.db`)
+  - `SQLite` (local development fallback: `circumorari_lines.db`)
   - `PostgreSQL` / Neon serverless (production persistence via `db.py` compat layer)
 - **Testing**: `pytest`, `anyio`
 
