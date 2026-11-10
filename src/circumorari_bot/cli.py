@@ -42,6 +42,36 @@ def sync_gtfs(feed_url: str = None) -> None:
     logger.info("GTFS sync completed: %d stops, %d trips, %d stop_times", stops, trips, st)
 
 
+def reset_commands() -> int:
+    """Synchronize and re-flush official slash commands with Telegram Bot API."""
+    from circumorari_bot.bot.bot_app import create_bot_application, sync_bot_commands
+
+    app = create_bot_application()
+
+    async def _run():
+        await app.initialize()
+        try:
+            return await sync_bot_commands(app.bot)
+        finally:
+            await app.shutdown()
+
+    logger.info("Synchronizing official slash commands with Telegram Bot API...")
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            count = pool.submit(asyncio.run, _run()).result()
+    else:
+        count = asyncio.run(_run())
+
+    print(f"✅ Successfully registered {count} slash commands with Telegram Bot API.")
+    return count
+
+
 def enrich_cities() -> None:
     """Run municipality (Comune) enrichment subtask on existing GTFS stops."""
     from circumorari_bot.data.gtfs_loader import enrich_existing_stops_cities
@@ -120,6 +150,7 @@ def main() -> None:
     subparsers.add_parser("check-news", help="Check for new articles and broadcast")
     worker_p = subparsers.add_parser("news-worker", help="Run news polling loop daemon")
     worker_p.add_argument("--interval", type=int, default=1800, help="Check interval in seconds")
+    subparsers.add_parser("reset-commands", help="Re-flush official slash commands with Telegram")
     subparsers.add_parser("stats", help="Print system statistics")
 
     args = parser.parse_args()
@@ -136,6 +167,8 @@ def main() -> None:
         check_news()
     elif args.command == "news-worker":
         run_news_worker(interval_seconds=args.interval)
+    elif args.command in ("reset-commands", "reflush-commands"):
+        reset_commands()
     elif args.command == "stats":
         show_stats()
     else:

@@ -26,6 +26,7 @@ router = APIRouter()
 _telegram_app = None
 _telegram_app_loop = None
 _webhook_updates_synced = False
+_bot_commands_synced = False
 
 ALLOWED_TELEGRAM_UPDATES: List[str] = [
     "message",
@@ -82,6 +83,24 @@ async def _shutdown_telegram_app_requests(app) -> None:
             pass
 
 
+async def _ensure_bot_commands_synced(app) -> int:
+    """Ensure bot commands are synced with Telegram Bot API on serverless deployments."""
+    global _bot_commands_synced
+    if _bot_commands_synced:
+        return 0
+    token = getattr(app.bot, "token", "") or ""
+    if not token or token.startswith("0000000000"):
+        return 0
+    try:
+        from circumorari_bot.bot.bot_app import sync_bot_commands
+        count = await sync_bot_commands(app.bot)
+        _bot_commands_synced = True
+        return count
+    except Exception as exc:
+        logger.warning("Could not auto-sync bot commands: %s", exc)
+        return 0
+
+
 async def _ensure_webhook_allowed_updates(app) -> Optional[Dict[str, Any]]:
     """Ensure the Telegram webhook includes `pre_checkout_query` in `allowed_updates`."""
     global _webhook_updates_synced
@@ -90,6 +109,7 @@ async def _ensure_webhook_allowed_updates(app) -> Optional[Dict[str, Any]]:
         return None
 
     try:
+        await _ensure_bot_commands_synced(app)
         info = await app.bot.get_webhook_info()
         target_url = getattr(info, "url", None) or settings.WEBHOOK_URL or ""
         current_allowed = list(getattr(info, "allowed_updates", None) or [])
@@ -350,9 +370,36 @@ async def health_check(sync_webhook: bool = Query(False)):
         app = await _prepare_telegram_app()
         try:
             result["webhook"] = await _ensure_webhook_allowed_updates(app)
+            result["commands_synced"] = await _ensure_bot_commands_synced(app)
         finally:
             await _shutdown_telegram_app_requests(app)
     return result
+
+
+@router.post("/api/commands/sync")
+@router.get("/api/commands/sync")
+async def sync_telegram_commands(
+    secret: Optional[str] = Query(None),
+    x_telegram_bot_api_secret_token: Optional[str] = Header(None)
+):
+    """Endpoint to trigger re-flushing official slash commands with Telegram Bot API."""
+    auth_secret = x_telegram_bot_api_secret_token or secret
+    valid_secrets = {s for s in (settings.WEBHOOK_SECRET, settings.CRON_SECRET) if s}
+    if valid_secrets and auth_secret not in valid_secrets:
+        raise HTTPException(status_code=403, detail="Invalid authorization secret")
+
+    app = await _prepare_telegram_app()
+    try:
+        from circumorari_bot.bot.bot_app import sync_bot_commands
+        count = await sync_bot_commands(app.bot)
+    finally:
+        await _shutdown_telegram_app_requests(app)
+
+    return {
+        "status": "ok",
+        "commands_synced": count,
+        "message": f"Successfully registered {count} slash commands with Telegram Bot API."
+    }
 
 
 # ==========================================

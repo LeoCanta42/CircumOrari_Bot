@@ -210,6 +210,30 @@ async def sync_gtfs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await status_msg.edit_text(f"❌ Errore durante la sincronizzazione: `{e}`", parse_mode="Markdown")
 
 
+async def reset_commands_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command to re-flush and register official slash commands with Telegram."""
+    user = update.effective_user
+    uid = getattr(user, "id", None) or (update.effective_chat.id if update.effective_chat else 0)
+    if not is_admin(uid):
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text("⛔ Comando riservato agli amministratori.")
+        return
+
+    msg = update.effective_message
+    from circumorari_bot.bot.bot_app import sync_bot_commands
+    try:
+        count = await sync_bot_commands(context.bot)
+        if msg:
+            await msg.reply_text(
+                f"✅ Comandi del bot aggiornati con successo su Telegram ({count} comandi registrati per il menu comandi)."
+            )
+    except Exception as exc:
+        logger.error("Error syncing bot commands via command: %s", exc)
+        if msg:
+            await msg.reply_text(f"❌ Errore durante l'aggiornamento dei comandi: {exc}")
+
+
 async def _execute_broadcast(bot, broadcast_text: str) -> tuple[int, int]:
     """Send broadcast text to all subscribed users and return (sent, failed)."""
     user_ids = users_repo.get_subscribed_chat_ids()
@@ -1018,6 +1042,28 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.error("Admin news check failed: %s", e)
             await query.edit_message_text(
                 f"❌ *Errore durante il controllo notizie:*\n`{e}`",
+                reply_markup=back_kb,
+                parse_mode="Markdown"
+            )
+        return
+
+    # 12b. Trigger Bot Commands Sync from Button
+    if data == "adm_reset_commands":
+        await query.answer("⏳ Aggiornamento comandi del bot...")
+        from circumorari_bot.bot.bot_app import sync_bot_commands
+        back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Pannello Admin", callback_data="adm_menu")]])
+        try:
+            count = await sync_bot_commands(context.bot)
+            await query.edit_message_text(
+                f"✅ *Comandi Bot Aggiornati*\n\n"
+                f"Sono stati registrati con successo `{count}` comandi ufficiali nel menu Telegram.",
+                reply_markup=back_kb,
+                parse_mode="Markdown"
+            )
+        except Exception as exc:
+            logger.error("Error syncing bot commands via admin panel: %s", exc)
+            await query.edit_message_text(
+                f"❌ *Errore durante l'aggiornamento dei comandi:*\n`{exc}`",
                 reply_markup=back_kb,
                 parse_mode="Markdown"
             )

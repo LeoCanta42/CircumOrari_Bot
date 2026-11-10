@@ -809,6 +809,87 @@ async def test_ai_message_handler_rate_limiting(monkeypatch):
         ai_rate_limiter.reset(test_user_id)
 
 
+@pytest.mark.anyio
+async def test_sync_bot_commands_and_admin_flows():
+    """Verify sync_bot_commands helper, /reset_commands command authorization, and admin callback."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from circumorari_bot.bot.bot_app import sync_bot_commands, PUBLIC_BOT_COMMANDS
+    from circumorari_bot.bot.handlers.admin import reset_commands_command, admin_callback
+    from circumorari_bot.config import settings
+    from circumorari_bot.cli import reset_commands
+
+    # 1. Direct helper execution
+    mock_bot = MagicMock()
+    mock_bot.token = "123456:FAKE_TOKEN"
+    mock_bot.set_my_commands = AsyncMock(return_value=True)
+
+    count = await sync_bot_commands(mock_bot)
+    assert count == len(PUBLIC_BOT_COMMANDS)
+    mock_bot.set_my_commands.assert_awaited_once_with(PUBLIC_BOT_COMMANDS)
+
+    # 2. Non-admin executing /reset_commands is denied
+    non_admin_upd = MagicMock(spec=Update)
+    user = MagicMock()
+    user.id = 112233
+    non_admin_upd.effective_user = user
+    msg = MagicMock()
+    msg.reply_text = AsyncMock()
+    non_admin_upd.effective_message = msg
+    ctx = MagicMock()
+    ctx.bot = mock_bot
+
+    await reset_commands_command(non_admin_upd, ctx)
+    msg.reply_text.assert_awaited_once_with("⛔ Comando riservato agli amministratori.")
+
+    # 3. Admin executing /reset_commands succeeds
+    admin_id = 998877
+    orig_admins = settings.ADMIN_USER_IDS_RAW
+    settings.ADMIN_USER_IDS_RAW = str(admin_id)
+    try:
+        admin_upd = MagicMock(spec=Update)
+        admin_user = MagicMock()
+        admin_user.id = admin_id
+        admin_upd.effective_user = admin_user
+        admin_msg = MagicMock()
+        admin_msg.reply_text = AsyncMock()
+        admin_upd.effective_message = admin_msg
+
+        await reset_commands_command(admin_upd, ctx)
+        admin_msg.reply_text.assert_awaited_once()
+        assert "aggiornati con successo" in admin_msg.reply_text.call_args[0][0]
+
+        # 4. Admin callback query 'adm_reset_commands'
+        cb_upd = MagicMock(spec=Update)
+        cb_upd.effective_user = admin_user
+        query = MagicMock()
+        query.data = "adm_reset_commands"
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+        cb_upd.callback_query = query
+
+        await admin_callback(cb_upd, ctx)
+        query.answer.assert_awaited_once()
+        query.edit_message_text.assert_awaited_once()
+        assert "Comandi Bot Aggiornati" in query.edit_message_text.call_args[0][0]
+    finally:
+        settings.ADMIN_USER_IDS_RAW = orig_admins
+
+    # 5. CLI command reset_commands()
+    with patch("circumorari_bot.bot.bot_app.create_bot_application") as mock_create_app:
+        fake_app = MagicMock()
+        fake_app.initialize = AsyncMock()
+        fake_app.shutdown = AsyncMock()
+        fake_app.bot.token = "123:TOKEN"
+        fake_app.bot.set_my_commands = AsyncMock(return_value=True)
+        mock_create_app.return_value = fake_app
+
+        reset_commands()
+        fake_app.initialize.assert_awaited_once()
+        fake_app.bot.set_my_commands.assert_awaited_once()
+        fake_app.shutdown.assert_awaited_once()
+
+
+
 
 
 

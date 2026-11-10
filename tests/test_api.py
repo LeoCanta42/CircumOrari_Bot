@@ -526,3 +526,35 @@ def test_telegram_webhook_auto_sync_allowed_updates():
         settings.WEBHOOK_SECRET = orig_secret
         settings.WEBHOOK_URL = orig_url
         router_mod._webhook_updates_synced = orig_synced
+
+
+def test_api_commands_sync_endpoint():
+    """Verify /api/commands/sync triggers set_my_commands and respects secret authentication."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from circumorari_bot.config import settings
+
+    orig_secret = settings.WEBHOOK_SECRET
+    settings.WEBHOOK_SECRET = "super_secret_token"
+    try:
+        # 1. Unauthorized without secret
+        resp_unauth = client.get("/api/commands/sync")
+        assert resp_unauth.status_code == 403
+
+        # 2. Authorized call
+        mock_app = MagicMock()
+        mock_app._initialized = True
+        mock_app.bot.token = "123456:REAL_TOKEN"
+        mock_app.bot._request = ()
+        mock_app.bot.set_my_commands = AsyncMock(return_value=True)
+
+        with patch("circumorari_bot.api.router.get_telegram_app", return_value=mock_app):
+            resp = client.get("/api/commands/sync?secret=super_secret_token")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["commands_synced"] >= 10
+        mock_app.bot.set_my_commands.assert_awaited_once()
+    finally:
+        settings.WEBHOOK_SECRET = orig_secret
+

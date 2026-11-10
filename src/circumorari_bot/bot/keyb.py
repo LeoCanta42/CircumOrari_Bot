@@ -45,6 +45,9 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("📢 Invia Broadcast", callback_data="adm_broadcast_prompt"),
+            InlineKeyboardButton("⚡ Resetta Comandi Bot", callback_data="adm_reset_commands"),
+        ],
+        [
             InlineKeyboardButton("🧹 Pulisci Inattivi (60gg)", callback_data="adm_prune"),
         ],
         [

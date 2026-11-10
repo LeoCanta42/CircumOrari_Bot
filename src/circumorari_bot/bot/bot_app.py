@@ -1,7 +1,7 @@
 """Telegram Application factory and handler configuration."""
 
 import logging
-from telegram import BotCommand, Update
+from telegram import Bot, BotCommand, Update
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -60,6 +60,7 @@ from circumorari_bot.bot.handlers.admin import (
     unsub_user_command,
     delete_user_command,
     list_ai_command,
+    reset_commands_command,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,15 +111,21 @@ PUBLIC_BOT_COMMANDS = [
 ]
 
 
+async def sync_bot_commands(bot: Bot) -> int:
+    """Register public bot commands with Telegram for '/' autocomplete menu."""
+    token = getattr(bot, "token", "") or ""
+    if not token or token.startswith("0000000000"):
+        return 0
+
+    await bot.set_my_commands(PUBLIC_BOT_COMMANDS)
+    logger.info("Bot commands successfully registered with Telegram (%d commands).", len(PUBLIC_BOT_COMMANDS))
+    return len(PUBLIC_BOT_COMMANDS)
+
+
 async def post_init(application: Application) -> None:
     """Register public bot commands with Telegram for '/' autocomplete."""
-    token = application.bot.token
-    if not token or token.startswith("0000000000"):
-        return
-
     try:
-        await application.bot.set_my_commands(PUBLIC_BOT_COMMANDS)
-        logger.info("Bot commands successfully registered with Telegram for autocomplete.")
+        await sync_bot_commands(application.bot)
     except Exception as exc:
         logger.warning("Could not set bot commands: %s", exc)
 
@@ -177,6 +184,7 @@ def create_bot_application() -> Application:
     app.add_handler(CommandHandler("delete_user", delete_user_command, filters=private_chat))
     app.add_handler(CommandHandler("del_user", delete_user_command, filters=private_chat))
     app.add_handler(CommandHandler("list_ai", list_ai_command, filters=private_chat))
+    app.add_handler(CommandHandler(["reset_commands", "reflush_commands"], reset_commands_command, filters=private_chat))
 
     # Callback queries
     app.add_handler(CallbackQueryHandler(start_command, pattern="^menu_main$"))
