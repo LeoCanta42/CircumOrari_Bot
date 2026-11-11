@@ -16,6 +16,7 @@ Il tuo assistente completo per gli orari e la mobilità della **Ferrovia Circume
 
 Cosa puoi fare:
 • 🔍 *Cerca Linea / Orari:* wizard guidato per trovare corse dirette o con cambio.
+• 📍 *Fermate Vicine:* invia la tua posizione per scoprire le fermate più vicine a te.
 • 🤖 *Assistente AI:* scrivi una frase qualsiasi in chat (es. _"Come vado da Catania a Bronte alle 14?"_) per ricevere subito una risposta intelligente!
 • 📢 *Ultime Notizie:* avvisi in tempo reale su scioperi, modifiche e orari.
 • 📄 *Documenti:* link ufficiali aggiornati ai PDF degli orari.
@@ -31,14 +32,15 @@ Puoi cercare direttamente senza usare i bottoni:
 `/viaggio Catania - Bronte 14:00`
 `/viaggio Randazzo Paternò`
 
-3. *Assistente AI:*
+3. *Fermate e Posizione:*
+`/fermate Milo` per vedere tutte le stazioni che contengono "Milo".
+`/posizione` o `/vicino` (oppure il tasto *Fermate Vicine*) per individuare le stazioni e fermate più vicine alle tue coordinate con link a Google Maps.
+
+4. *Assistente AI:*
 Puoi scrivere liberamente come a una persona:
 _"A che ora c'è la metro da Monte Po a Stesicoro?"_
 _"C'è un treno da Randazzo alle 12:30?"_
-L'Assistente AI offre 1 prova gratuita e successivamente un abbonamento di 30 giorni effettivi. Per gestire il tuo piano usa il comando /abbonamento.
-
-4. *Fermate:*
-`/fermate Milo` per vedere tutte le stazioni che contengono "Milo".
+L'Assistente AI offre 1 prova gratuita e successivamente un abbonamento di 30 giorni effettivi. L'accesso AI richiede un piccolo contributo economico unicamente per coprire i costi operativi e dei modelli sostenuti direttamente dallo sviluppatore, fungendo anche da donazione a supporto del progetto. Tutte le altre funzionalità del bot (orari, fermate vicine, notizie, PDF ufficiali) sono e rimangono completamente gratuite e open-source. Per gestire il tuo piano usa il comando /abbonamento.
 
 5. *Avvisi e Notifiche:*
 Puoi iscriverti agli avvisi in tempo reale su scioperi e ritardi premendo il pulsante *Notifiche & Avvisi* o inviando il comando /iscriviti (e disattivare con /disiscriviti).
@@ -47,7 +49,8 @@ Puoi iscriverti agli avvisi in tempo reale su scioperi e ritardi premendo il pul
 Quando utilizzi il bot, vengono memorizzati `chat_id`, eventuale `@username`, nome e data di ultimo accesso (`last_active`) con *notifiche e AI disattivate di default*. Questo permette di gestire eventuali abilitazioni (notifiche o accesso AI) e di pulire automaticamente i profili inattivi dopo 60 giorni. Se non desideri più usare il bot, puoi eliminare istantaneamente e definitivamente il tuo record con il comando /cancella.
 
 👨‍💻 *Sviluppatore & Progetto:*
-Creato e sviluppato da *LeoCanta42*.
+Creato e sviluppato in modo indipendente da *LeoCanta42*.
+Tutte le funzioni ordinarie di consultazione orari, fermate e avvisi sono gratuite e open-source. L'abbonamento all'Assistente AI copre i costi vivi dell'infrastruttura ed è una donazione per sostenere lo sviluppo continuo del bot.
 Progetto open-source disponibile su [GitHub](https://github.com/LeoCanta42/CircumOrari_Bot)."""
 
 

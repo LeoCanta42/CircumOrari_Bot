@@ -1,7 +1,7 @@
 """Inline keyboards for Telegram bot interaction."""
 
 from typing import List, Optional
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from circumorari_bot.core.models import TransportType, FilterType, Stop
 
 
@@ -10,14 +10,17 @@ def main_menu_keyboard(is_admin_user: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton("🔍 Cerca Linea / Orari", callback_data="wizard_start"),
+            InlineKeyboardButton("📍 Fermate Vicine", callback_data="prompt_location"),
+        ],
+        [
             InlineKeyboardButton("🤖 Assistente AI", callback_data="ai_help"),
-        ],
-        [
             InlineKeyboardButton("📢 Ultime Notizie", callback_data="news_latest"),
-            InlineKeyboardButton("🔔 Notifiche & Avvisi", callback_data="news_sub_menu"),
         ],
         [
+            InlineKeyboardButton("🔔 Notifiche & Avvisi", callback_data="news_sub_menu"),
             InlineKeyboardButton("📄 Orari Ufficiali PDF", callback_data="doc_all"),
+        ],
+        [
             InlineKeyboardButton("ℹ️ Guida & Info", callback_data="help_info"),
         ],
     ]
@@ -26,6 +29,26 @@ def main_menu_keyboard(is_admin_user: bool = False) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🛠 Pannello Admin", callback_data="adm_menu"),
         ])
     return InlineKeyboardMarkup(rows)
+
+
+def location_request_keyboard() -> ReplyKeyboardMarkup:
+    """Reply keyboard requesting user to share geographic location or cancel."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("📍 Invia la mia posizione", request_location=True)],
+            [KeyboardButton("❌ Annulla")],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def nearest_stops_result_keyboard() -> InlineKeyboardMarkup:
+    """Inline navigation keyboard displayed below nearest stops search results."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔍 Cerca Linea / Orari", callback_data="wizard_start")],
+        [InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main")],
+    ])
 
 
 def admin_panel_keyboard() -> InlineKeyboardMarkup:

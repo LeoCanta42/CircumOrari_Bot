@@ -30,8 +30,9 @@ async def send_subscription_invoice(update: Update, context: ContextTypes.DEFAUL
 
     title = f"Abbonamento Assistente AI ({sub_days}gg)"
     description = (
-        f"Accesso illimitato per {sub_days} giorni all'Assistente AI CircumOrari per orari e percorsi. "
-        f"Nessun rinnovo automatico a sorpresa. Costo: {cost_label}."
+        f"Accesso illimitato {sub_days}gg all'Assistente AI CircumOrari. "
+        f"Il pagamento copre i costi vivi dei modelli e sostiene il progetto come donazione. "
+        f"Orari e fermate restano sempre gratuiti. Costo: {cost_label}."
     )
     payload = f"ai_sub:{chat.id}:{int(time.time())}"
 
@@ -168,7 +169,13 @@ async def ai_sub_info_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         exp_str = "Accesso Illimitato (Admin)"
 
     info_text = (
-        "ℹ️ *Informazioni Abbonamento & Privacy Assistente AI*\n\n"
+        "ℹ️ *Informazioni Abbonamento, Costi & Donazione AI*\n\n"
+        "💡 *Perché l'Assistente AI richiede un contributo?*\n"
+        "Tutte le funzionalità ordinarie di CircumOrari (ricerca orari, fermate vicine, avvisi e tabelle PDF) "
+        "sono e saranno sempre *100% gratuite e open source*.\n"
+        "L'integrazione con i modelli di intelligenza artificiale comporta invece costi computazionali vivi sostenuti "
+        "direttamente dallo sviluppatore. Il piccolo contributo mensile copre queste spese e funge da "
+        "donazione a supporto dello sviluppo e mantenimento del bot.\n\n"
         f"• *Costo:* {price_display} ogni {sub_days} giorni.\n"
         f"• *Durata:* Il mese è calcolato in {sub_days} giorni solari effettivi dalla data di pagamento.\n"
         f"• *Prova Gratuita:* 1 sola volta per utente ({trial_days} giorni).\n"
@@ -272,13 +279,18 @@ async def abbonamento_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"🤖 *Il tuo Abbonamento AI è Attivo*\n\n"
             f"📅 *Scadenza:* `{exp_str}`\n"
             f"⏳ *Giorni rimanenti:* `{days_rem}`\n\n"
-            f"Puoi estendere l'abbonamento di ulteriori {sub_days} giorni a {price_display}."
+            f"Puoi estendere l'abbonamento di ulteriori {sub_days} giorni a {price_display}.\n\n"
+            "Grazie per il tuo supporto! Il tuo contributo copre i costi operativi dei modelli AI e sostiene il progetto open source CircumOrari."
         )
     else:
         text = (
             "🤖 *Abbonamento Assistente AI CircumOrari*\n\n"
             f"Attiva l'accesso per {sub_days} giorni a soli *{price_display}*.\n"
-            "Nessun vincolo, nessun rinnovo automatico."
+            "Nessun vincolo, nessun rinnovo automatico.\n\n"
+            "💡 *Sostieni il Progetto:*\n"
+            "Mentre orari, fermate vicine, avvisi e tabelle PDF sono completamente gratuiti e open source, "
+            "l'Assistente AI comporta costi computazionali diretti. Il pagamento copre le spese dei modelli "
+            "e funge da donazione a supporto del bot."
         )
 
     can_trial = not status.get("trial_used") and settings_repo.is_trial_enabled()

@@ -37,6 +37,12 @@ from circumorari_bot.bot.handlers.news import (
     disiscriviti_command,
 )
 from circumorari_bot.bot.handlers.documents import documents_command, documents_callback
+from circumorari_bot.bot.handlers.location import (
+    prompt_location_command,
+    prompt_location_callback,
+    location_cancel_handler,
+    location_handler,
+)
 from circumorari_bot.bot.handlers.ai_chat import ai_message_handler, ai_help_callback
 from circumorari_bot.bot.handlers.payments import (
     ai_subscribe_callback,
@@ -99,6 +105,7 @@ PUBLIC_BOT_COMMANDS = [
     BotCommand("start", "Menu principale e calcolo viaggio"),
     BotCommand("viaggio", "Cerca corsa (es. /viaggio Catania - Bronte)"),
     BotCommand("fermate", "Cerca stazioni e fermate"),
+    BotCommand("posizione", "Trova le fermate più vicine alla tua posizione"),
     BotCommand("news", "Ultime notizie e avvisi di servizio"),
     BotCommand("iscriviti", "Ricevi notifiche su scioperi e variazioni"),
     BotCommand("disiscriviti", "Disattiva la ricezione delle notifiche"),
@@ -160,6 +167,7 @@ def create_bot_application() -> Application:
     app.add_handler(CommandHandler("abbonamento", abbonamento_command, filters=private_chat))
     app.add_handler(CommandHandler("viaggio", viaggio_command, filters=private_chat))
     app.add_handler(CommandHandler("fermate", fermate_command, filters=private_chat))
+    app.add_handler(CommandHandler(["posizione", "vicino"], prompt_location_command, filters=private_chat))
     app.add_handler(CommandHandler("news", news_command, filters=private_chat))
     app.add_handler(CommandHandler("iscriviti", iscriviti_command, filters=private_chat))
     app.add_handler(CommandHandler("disiscriviti", disiscriviti_command, filters=private_chat))
@@ -189,6 +197,7 @@ def create_bot_application() -> Application:
     # Callback queries
     app.add_handler(CallbackQueryHandler(start_command, pattern="^menu_main$"))
     app.add_handler(CallbackQueryHandler(help_command, pattern="^help_info$"))
+    app.add_handler(CallbackQueryHandler(prompt_location_callback, pattern="^prompt_location$"))
     app.add_handler(CallbackQueryHandler(ai_help_callback, pattern="^ai_help$"))
     app.add_handler(CallbackQueryHandler(ai_subscribe_callback, pattern="^ai_subscribe$"))
     app.add_handler(CallbackQueryHandler(ai_trial_activate_callback, pattern="^ai_trial_activate$"))
@@ -204,6 +213,10 @@ def create_bot_application() -> Application:
     # Payments handlers (Pre-Checkout verification and successful payment notification)
     app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
     app.add_handler(MessageHandler(private_chat & filters.SUCCESSFUL_PAYMENT, successful_payment_handler), group=1)
+
+    # Location and location prompt cancellation handlers
+    app.add_handler(MessageHandler(private_chat & filters.LOCATION, location_handler))
+    app.add_handler(MessageHandler(private_chat & filters.Regex(r"(?i)^(?:❌\s*)?annulla$"), location_cancel_handler))
 
     # Natural language AI chat fallback - strictly private 1-to-1 chat only
     app.add_handler(MessageHandler(private_chat & filters.TEXT & ~filters.COMMAND, ai_message_handler))

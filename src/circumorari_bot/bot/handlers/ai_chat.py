@@ -85,7 +85,10 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"Il tuo periodo di accesso all'Assistente AI è terminato il `{exp_str}` (UTC).\n\n"
                 f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
                 f"Per continuare ad utilizzarlo, puoi rinnovare l'accesso per altri {sub_days} giorni a soli *{price_str}*.\n\n"
-                "Nel frattempo puoi sempre cercare corse e fermate tramite i comandi /viaggio e /fermate."
+                "💡 *Perché un abbonamento?*\n"
+                "L'integrazione dei modelli linguistici AI genera costi computazionali e operativi sostenuti direttamente dallo sviluppatore. "
+                "Il pagamento copre queste spese e funge da donazione a supporto del progetto. "
+                "Tutte le altre funzioni (orari, fermate vicine, notizie, PDF) sono e rimangono *100% gratuite e open source* (es. /viaggio, /fermate, /posizione)."
             )
         elif can_trial:
             restricted_msg = (
@@ -94,14 +97,18 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
                 f"🎁 *Hai a disposizione 1 Prova Gratuita di {settings_repo.get_trial_days()} giorni!*\n"
                 "Puoi attivarla subito gratuitamente senza alcun costo o impegno.\n\n"
-                f"Al termine, potrai rinnovare per {sub_days} giorni a soli *{price_str}*."
+                f"Al termine, potrai rinnovare per {sub_days} giorni a soli *{price_str}*.\n\n"
+                "💡 *Trasparenza*: l'AI richiede un piccolo contributo per coprire i costi operativi dei modelli e sostenere "
+                "il progetto come donazione, mentre orari, fermate e notizie restano sempre 100% gratuiti e open source."
             )
         else:
             restricted_msg = (
                 "🔒 *Assistente AI ad accesso limitato*\n\n"
                 "L'assistente conversazionale AI è attivo per gli utenti abbonati.\n\n"
                 f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
-                f"Puoi attivare l'accesso illimitato per {sub_days} giorni (calcolati dal momento dell'attivazione) a soli *{price_str}*."
+                f"Puoi attivare l'accesso illimitato per {sub_days} giorni a soli *{price_str}*.\n\n"
+                "💡 Il pagamento copre i costi vivi dei modelli AI sostenuti dallo sviluppatore e sostiene il progetto come donazione. "
+                "Tutte le altre funzionalità (orari, fermate vicine, notizie, PDF) sono completamente gratuite e open source."
             )
 
         reply_markup = ai_subscription_prompt_keyboard(
@@ -184,7 +191,9 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 "🔒 *Assistente AI ad accesso limitato (Abbonamento Scaduto)*\n\n"
                 f"Il tuo periodo di accesso all'Assistente AI è terminato il `{exp_str}` (UTC).\n\n"
                 f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
-                f"Puoi riattivare l'accesso per {sub_days} giorni a soli *{price_str}*."
+                f"Puoi riattivare l'accesso per {sub_days} giorni a soli *{price_str}*.\n\n"
+                "💡 Il pagamento copre i costi vivi dei modelli AI sostenuti direttamente dallo sviluppatore e funge da donazione a supporto del progetto. "
+                "Orari, fermate vicine, notizie e tabelle PDF restano sempre 100% gratuiti e open source."
             )
         elif can_trial:
             restricted_msg = (
@@ -193,13 +202,17 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
                 f"🎁 *Hai a disposizione 1 Prova Gratuita di {settings_repo.get_trial_days()} giorni!*\n"
                 "Attivala con un solo tocco senza inserire alcuna carta.\n\n"
-                f"Successivamente potrai rinnovare per {sub_days} giorni a soli *{price_str}*."
+                f"Successivamente potrai rinnovare per {sub_days} giorni a soli *{price_str}*.\n\n"
+                "💡 Il contributo per l'AI copre i costi computazionali dei modelli sostenuti dallo sviluppatore e sostiene il bot come donazione, "
+                "mentre tutte le ricerche ordinarie e le fermate vicine sono totalmente gratuite."
             )
         else:
             restricted_msg = (
                 "🔒 *Assistente AI ad accesso limitato*\n\n"
                 f"L'assistente conversazionale è disponibile per {sub_days} giorni a soli *{price_str}*.\n\n"
-                f"🆔 Il tuo ID chat è: `{chat_id}`"
+                f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
+                "💡 Il pagamento copre le spese vive dei modelli AI sostenute dallo sviluppatore e supporta il progetto come donazione. "
+                "Tutte le altre funzioni di CircumOrari sono e rimarranno sempre 100% gratuite e open source."
             )
 
         reply_markup = ai_subscription_prompt_keyboard(

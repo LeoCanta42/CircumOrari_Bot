@@ -371,7 +371,7 @@ class TransitService:
         lat: float,
         lon: float,
         transport_type: TransportType = TransportType.QUALSIASI,
-        max_distance_m: float = 3500.0,
+        max_distance_m: Optional[float] = 3500.0,
         limit: int = 5,
     ) -> List[Stop]:
         """Return stops closest to given WGS84 coordinates, sorted by Haversine distance in meters."""
@@ -391,7 +391,7 @@ class TransitService:
         by_key: Dict[Tuple[str, str], Stop] = {}
         for r in rows:
             dist = haversine_meters(lat, lon, float(r["lat"]), float(r["lon"]))
-            if dist > max_distance_m:
+            if max_distance_m is not None and dist > max_distance_m:
                 continue
             dist_int = int(round(dist))
             st = self._row_to_stop(r, distance_meters=dist_int)

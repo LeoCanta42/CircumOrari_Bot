@@ -242,6 +242,7 @@ async def test_bot_post_init_and_commands():
     assert "start" in cmd_names
     assert "viaggio" in cmd_names
     assert "fermate" in cmd_names
+    assert "posizione" in cmd_names
     assert "news" in cmd_names
     assert "iscriviti" in cmd_names
     assert "disiscriviti" in cmd_names
@@ -267,13 +268,14 @@ async def test_bot_post_init_and_commands():
     from telegram.ext import MessageHandler
     from telegram import Message as TgMessage, Chat as TgChat
     msg_handlers = [h for h in app.handlers[0] if isinstance(h, MessageHandler)]
-    assert len(msg_handlers) == 1
+    assert len(msg_handlers) == 3
     u_channel = Update(999, channel_post=TgMessage(999, None, TgChat(-100123, "channel"), text="prova"))
-    assert msg_handlers[0].filters.check_update(u_channel) is False
+    assert all(h.filters.check_update(u_channel) is False for h in msg_handlers)
     u_group = Update(999, message=TgMessage(999, None, TgChat(-100456, "supergroup"), text="prova"))
-    assert msg_handlers[0].filters.check_update(u_group) is False
+    assert all(h.filters.check_update(u_group) is False for h in msg_handlers)
     u_priv = Update(999, message=TgMessage(999, None, TgChat(12345, "private"), text="prova"))
-    assert msg_handlers[0].filters.check_update(u_priv) is True
+    text_handler = msg_handlers[-1]
+    assert text_handler.filters.check_update(u_priv) is True
 
     # Post init with dummy token should safely return without network call
     mock_dummy_app = MagicMock()
@@ -887,6 +889,241 @@ async def test_sync_bot_commands_and_admin_flows():
         fake_app.initialize.assert_awaited_once()
         fake_app.bot.set_my_commands.assert_awaited_once()
         fake_app.shutdown.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_main_menu_keyboard_and_location_keyboards():
+    """Verify main menu contains location button and location keyboards are properly configured."""
+    from circumorari_bot.bot.keyb import (
+        main_menu_keyboard,
+        location_request_keyboard,
+        nearest_stops_result_keyboard,
+    )
+    from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup
+
+    # 1. Main menu keyboard
+    mm = main_menu_keyboard(is_admin_user=False)
+    all_btns = [b for row in mm.inline_keyboard for b in row]
+    assert any(b.text == "📍 Fermate Vicine" and b.callback_data == "prompt_location" for b in all_btns)
+
+    # 2. Location request keyboard
+    rk = location_request_keyboard()
+    assert isinstance(rk, ReplyKeyboardMarkup)
+    assert rk.resize_keyboard is True
+    assert rk.one_time_keyboard is True
+    r_btns = [b for row in rk.keyboard for b in row]
+    assert any(getattr(b, "request_location", False) is True for b in r_btns)
+    assert any("Annulla" in b.text for b in r_btns)
+
+    # 3. Nearest stops result keyboard
+    res_k = nearest_stops_result_keyboard()
+    assert isinstance(res_k, InlineKeyboardMarkup)
+    res_btns = [b for row in res_k.inline_keyboard for b in row]
+    assert any(b.callback_data == "wizard_start" for b in res_btns)
+    assert any(b.callback_data == "menu_main" for b in res_btns)
+
+
+@pytest.mark.anyio
+async def test_location_prompt_and_command():
+    """Verify callback and slash command prompt user with request_location reply keyboard."""
+    from circumorari_bot.bot.handlers.location import prompt_location_callback, prompt_location_command
+    from telegram import ReplyKeyboardMarkup
+
+    # 1. Callback query triggered by 'prompt_location'
+    upd_cb = MagicMock(spec=Update)
+    query = MagicMock()
+    query.answer = AsyncMock()
+    upd_cb.callback_query = query
+    chat = MagicMock()
+    chat.id = 12345
+    upd_cb.effective_chat = chat
+    ctx = MagicMock()
+    ctx.bot.send_message = AsyncMock()
+
+    await prompt_location_callback(upd_cb, ctx)
+    query.answer.assert_awaited_once()
+    ctx.bot.send_message.assert_awaited_once()
+    sent_call = ctx.bot.send_message.call_args[1]
+    assert isinstance(sent_call["reply_markup"], ReplyKeyboardMarkup)
+    assert "Fermate più Vicine" in sent_call["text"]
+
+    # 2. Command without args (/posizione or /vicino)
+    upd_cmd = MagicMock(spec=Update)
+    msg = MagicMock()
+    msg.reply_text = AsyncMock()
+    upd_cmd.effective_message = msg
+    ctx_cmd = MagicMock()
+    ctx_cmd.args = []
+
+    await prompt_location_command(upd_cmd, ctx_cmd)
+    msg.reply_text.assert_awaited_once()
+    assert isinstance(msg.reply_text.call_args[1]["reply_markup"], ReplyKeyboardMarkup)
+
+    # 3. Command with explicit coordinates (/posizione 37.505 15.087)
+    msg.reply_text.reset_mock()
+    ctx_cmd.args = ["37.505", "15.087"]
+    await prompt_location_command(upd_cmd, ctx_cmd)
+    msg.reply_text.assert_awaited_once()
+    text = msg.reply_text.call_args[0][0]
+    assert "STESICORO" in text
+    assert "google.com/maps" in text
+
+
+@pytest.mark.anyio
+async def test_location_cancel_handler():
+    """Verify '❌ Annulla' cancels location retrieval, removes reply keyboard, and displays main menu."""
+    from circumorari_bot.bot.handlers.location import location_cancel_handler
+    from telegram import ReplyKeyboardRemove, InlineKeyboardMarkup
+
+    upd = MagicMock(spec=Update)
+    msg = MagicMock()
+    msg.reply_text = AsyncMock()
+    upd.effective_message = msg
+    chat = MagicMock()
+    chat.id = 12345
+    upd.effective_chat = chat
+    ctx = MagicMock()
+
+    await location_cancel_handler(upd, ctx)
+    assert msg.reply_text.await_count == 2
+    # First message removes the reply keyboard
+    assert isinstance(msg.reply_text.call_args_list[0][1]["reply_markup"], ReplyKeyboardRemove)
+    assert "annullata" in msg.reply_text.call_args_list[0][0][0]
+    # Second message provides the main menu inline keyboard
+    assert isinstance(msg.reply_text.call_args_list[1][1]["reply_markup"], InlineKeyboardMarkup)
+
+
+@pytest.mark.anyio
+async def test_location_handler_catania_and_far_network():
+    """Verify incoming user location calculation: tags, Google Maps link, ReplyKeyboardRemove, and >70km note."""
+    from circumorari_bot.bot.handlers.location import location_handler
+    from telegram import ReplyKeyboardRemove, InlineKeyboardMarkup
+
+    # 1. Location in central Catania
+    upd = MagicMock(spec=Update)
+    msg = MagicMock()
+    status_msg = MagicMock()
+    status_msg.edit_text = AsyncMock()
+    msg.reply_text = AsyncMock(return_value=status_msg)
+    loc = MagicMock()
+    loc.latitude = 37.505
+    loc.longitude = 15.087
+    msg.location = loc
+    upd.effective_message = msg
+    chat = MagicMock()
+    chat.id = 12345
+    upd.effective_chat = chat
+    ctx = MagicMock()
+
+    await location_handler(upd, ctx)
+    # Checks immediate ReplyKeyboardRemove
+    msg.reply_text.assert_awaited_once()
+    assert isinstance(msg.reply_text.call_args[1]["reply_markup"], ReplyKeyboardRemove)
+
+    # Checks edit_text with nearest stops formatting
+    status_msg.edit_text.assert_awaited_once()
+    result_text = status_msg.edit_text.call_args[0][0]
+    assert "STESICORO" in result_text
+    assert "https://www.google.com/maps/search/?api=1&query=" in result_text
+    assert "🚇 Metro" in result_text
+    assert "Nota di prossimità" not in result_text
+    assert isinstance(status_msg.edit_text.call_args[1]["reply_markup"], InlineKeyboardMarkup)
+
+    # 2. Location far from Catania network (Rome coordinates, > 70 km)
+    msg.reply_text.reset_mock()
+    status_msg.edit_text.reset_mock()
+    loc.latitude = 41.9028
+    loc.longitude = 12.4964
+
+    await location_handler(upd, ctx)
+    status_msg.edit_text.assert_awaited_once()
+    far_text = status_msg.edit_text.call_args[0][0]
+    assert "Nota di prossimità" in far_text
+    assert "fuori dall'area" in far_text
+    assert "https://www.google.com/maps/search/?api=1&query=" in far_text
+
+
+@pytest.mark.anyio
+async def test_ai_cost_and_donation_descriptions():
+    """Verify AI model cost justification and open-source donation explanations across help and payment views."""
+    from circumorari_bot.bot.handlers.start import HELP_TEXT
+    from circumorari_bot.bot.handlers.payments import (
+        send_subscription_invoice,
+        ai_sub_info_callback,
+        abbonamento_command,
+    )
+    from circumorari_bot.bot.handlers.ai_chat import ai_help_callback
+    from circumorari_bot.data.users_repo import UsersRepository
+
+    # 1. HELP_TEXT checks
+    assert "costi operativi" in HELP_TEXT or "costi vivi" in HELP_TEXT
+    assert "donazione" in HELP_TEXT
+    assert "open-source" in HELP_TEXT
+    assert "gratuite" in HELP_TEXT
+
+    # 2. send_subscription_invoice invoice description
+    upd_inv = MagicMock(spec=Update)
+    chat = MagicMock()
+    chat.id = 99887711
+    upd_inv.effective_chat = chat
+    ctx_inv = MagicMock()
+    ctx_inv.bot.send_invoice = AsyncMock()
+
+    await send_subscription_invoice(upd_inv, ctx_inv)
+    inv_desc = ctx_inv.bot.send_invoice.call_args[1]["description"]
+    assert "costi" in inv_desc.lower()
+    assert "donazione" in inv_desc.lower()
+    assert "gratuit" in inv_desc.lower()
+
+    # 3. ai_sub_info_callback message text
+    upd_info = MagicMock(spec=Update)
+    upd_info.effective_chat = chat
+    q_info = MagicMock()
+    q_info.answer = AsyncMock()
+    q_info.edit_message_text = AsyncMock()
+    upd_info.callback_query = q_info
+    ctx_info = MagicMock()
+
+    await ai_sub_info_callback(upd_info, ctx_info)
+    info_text = q_info.edit_message_text.call_args[0][0]
+    assert "donazione" in info_text.lower()
+    assert "costi" in info_text.lower()
+    assert "gratuite" in info_text.lower()
+
+    # 4. abbonamento_command prompt text
+    upd_abb = MagicMock(spec=Update)
+    upd_abb.effective_chat = chat
+    msg_abb = MagicMock()
+    msg_abb.reply_text = AsyncMock()
+    upd_abb.effective_message = msg_abb
+    ctx_abb = MagicMock()
+
+    await abbonamento_command(upd_abb, ctx_abb)
+    abb_text = msg_abb.reply_text.call_args[0][0]
+    assert "donazione" in abb_text.lower()
+    assert "costi" in abb_text.lower()
+
+    # 5. ai_help_callback restricted message for unsubscribed user
+    repo = UsersRepository()
+    test_user_id = 99887722
+    repo.delete_user(test_user_id)
+    upd_ai = MagicMock(spec=Update)
+    chat_ai = MagicMock()
+    chat_ai.id = test_user_id
+    upd_ai.effective_chat = chat_ai
+    user_ai = MagicMock()
+    user_ai.id = test_user_id
+    upd_ai.effective_user = user_ai
+    q_ai = MagicMock()
+    q_ai.answer = AsyncMock()
+    q_ai.edit_message_text = AsyncMock()
+    upd_ai.callback_query = q_ai
+    ctx_ai = MagicMock()
+
+    await ai_help_callback(upd_ai, ctx_ai)
+    ai_help_text = q_ai.edit_message_text.call_args[0][0]
+    assert "donazione" in ai_help_text.lower()
+    assert "costi" in ai_help_text.lower()
 
 
 
