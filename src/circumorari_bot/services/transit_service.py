@@ -4,9 +4,9 @@ import difflib
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from circumorari_bot.core.models import FilterType, Itinerary, Stop, TransportType, TripSegment
+from circumorari_bot.core.models import Departure, FilterType, Itinerary, Stop, TransportType, TripSegment
 from circumorari_bot.core.time_utils import get_current_time_str
 from circumorari_bot.data.city_resolver import geocode_place_in_etna_area, haversine_meters
 from circumorari_bot.data.db import get_db, normalize_stop_name
@@ -608,6 +608,17 @@ class TransitService:
         )
         return res.stop_ids
 
+    def get_stop_ids(
+        self,
+        name_or_query: str,
+        transport_type: TransportType = TransportType.QUALSIASI,
+        allow_geocoding: bool = False,
+    ) -> List[str]:
+        """Public alias for stop ID resolution."""
+        return self._resolve_stop_ids(
+            name_or_query, transport_type=transport_type, allow_geocoding=allow_geocoding
+        )
+
     # ==========================================
     # Route Path Tracing
     # ==========================================
@@ -755,6 +766,105 @@ class TransitService:
         if len(parts) == 1:
             return f"{int(parts[0]):02d}:00"
         return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+
+    def get_upcoming_departures(
+        self,
+        stop_id: Optional[Union[str, List[str]]] = None,
+        stop_ids: Optional[List[str]] = None,
+        stop_name: Optional[str] = None,
+        current_time: Optional[str] = None,
+        limit: int = 5,
+        transport_type: Optional[TransportType] = None,
+    ) -> List[Departure]:
+        """Query upcoming scheduled departures from a stop from current_time onwards.
+
+        Excludes the terminus / final drop-off stop of trips where passengers cannot board.
+        Returns deduplicated departures ordered chronologically.
+        """
+        target_ids: List[str] = []
+        if stop_ids:
+            target_ids = [str(sid) for sid in stop_ids if sid]
+        elif isinstance(stop_id, (list, tuple, set)):
+            target_ids = [str(sid) for sid in stop_id if sid]
+        elif stop_id:
+            target_ids = [str(stop_id)]
+        elif stop_name:
+            target_ids = self.get_stop_ids(
+                stop_name, transport_type=transport_type or TransportType.QUALSIASI
+            )
+
+        if not target_ids:
+            return []
+
+        cleaned_time = self._standardize_time(current_time)
+        placeholders = ",".join("?" for _ in target_ids)
+        params: List[Any] = list(target_ids) + [cleaned_time]
+
+        sql = f"""
+            SELECT
+                st.departure_time,
+                r.transport_type,
+                coalesce(nullif(r.route_short_name, 'NULL'), r.route_long_name, '') as route_name,
+                coalesce(t.trip_headsign, '') as headsign,
+                s.stop_name,
+                st.stop_id,
+                st.trip_id
+            FROM stop_times st
+            JOIN trips t ON st.trip_id = t.trip_id
+            JOIN routes r ON t.route_id = r.route_id
+            JOIN stops s ON st.stop_id = s.stop_id
+            WHERE st.stop_id IN ({placeholders})
+              AND st.departure_time >= ?
+              AND st.stop_sequence < (
+                  SELECT MAX(st_max.stop_sequence)
+                  FROM stop_times st_max
+                  WHERE st_max.trip_id = st.trip_id
+              )
+        """
+        if transport_type and transport_type != TransportType.QUALSIASI:
+            sql += " AND r.transport_type = ?"
+            params.append(transport_type.value)
+
+        sql += " ORDER BY st.departure_time ASC LIMIT ?"
+        params.append(limit * 6)
+
+        with get_db(self.db_path) as conn:
+            rows = conn.cursor().execute(sql, tuple(params)).fetchall()
+
+        seen_keys: Set[Tuple[str, str, str, str]] = set()
+        departures: List[Departure] = []
+
+        for row in rows:
+            dep_time = row["departure_time"]
+            t_type_val = row["transport_type"]
+            t_type = (
+                TransportType(t_type_val)
+                if t_type_val in TransportType._value2member_map_
+                else TransportType.QUALSIASI
+            )
+            r_name = row["route_name"] or ""
+            headsign = row["headsign"] or ""
+
+            dedup_key = (dep_time, t_type.value, r_name, headsign)
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+
+            departures.append(
+                Departure(
+                    departure_time=dep_time,
+                    transport_type=t_type,
+                    route_name=r_name,
+                    headsign=headsign,
+                    stop_name=row["stop_name"] or "",
+                    stop_id=str(row["stop_id"]),
+                    trip_id=str(row["trip_id"]),
+                )
+            )
+            if len(departures) >= limit:
+                break
+
+        return departures
 
     def find_trips_from_resolutions(
         self,

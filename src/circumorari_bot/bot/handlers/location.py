@@ -48,6 +48,7 @@ def format_nearest_stops_message(
     lat: float,
     lon: float,
     ts: Optional[TransitService] = None,
+    current_time: Optional[str] = None,
 ) -> str:
     """Calculate and format closest stops using pure spatial Haversine distance without AI."""
     if ts is None:
@@ -88,6 +89,41 @@ def format_nearest_stops_message(
         maps_link = f"https://www.google.com/maps/search/?api=1&query={stop.lat:.6f},{stop.lon:.6f}"
         lines.append(f"{idx}. *{clean_name}*{clean_city} – *{dist_str}*")
         lines.append(f"   {badges} · [📍 Apri Mappa]({maps_link})")
+        lines.append("")
+
+    # Upcoming departures for the closest stop (if within network reach)
+    if not is_far and overall_stops:
+        target_stop = overall_stops[0]
+        expanded_ids = ts._expand_stop_ids_for_stops([target_stop])
+        departures = ts.get_upcoming_departures(
+            stop_ids=expanded_ids,
+            current_time=current_time,
+            limit=4,
+        )
+
+        # If #1 stop has no departures soon, check #2 stop if it is nearby (within 300m)
+        if not departures and len(overall_stops) > 1:
+            second_stop = overall_stops[1]
+            dist_1 = target_stop.distance_meters or 0
+            dist_2 = second_stop.distance_meters or 0
+            if dist_2 <= dist_1 + 300:
+                second_ids = ts._expand_stop_ids_for_stops([second_stop])
+                second_deps = ts.get_upcoming_departures(
+                    stop_ids=second_ids,
+                    current_time=current_time,
+                    limit=4,
+                )
+                if second_deps:
+                    target_stop = second_stop
+                    departures = second_deps
+
+        clean_target_name = target_stop.stop_name.replace("*", "")
+        lines.append(f"🕒 *Prossime partenze da {clean_target_name}:*")
+        if departures:
+            for dep in departures:
+                lines.append(f"• {dep.display_line}")
+        else:
+            lines.append("• _Nessuna corsa in partenza a breve o servizio terminato per oggi._")
         lines.append("")
 
     # Nearest stop for each specific transport mode

@@ -109,6 +109,78 @@ class Stop:
 
 
 @dataclass
+class Departure:
+    """Represents a scheduled departure from a stop."""
+
+    departure_time: str
+    transport_type: TransportType
+    route_name: str
+    headsign: str
+    stop_name: str = ""
+    stop_id: str = ""
+    trip_id: str = ""
+
+    @property
+    def display_line(self) -> str:
+        """Render a clean single-line representation, e.g. '08:50 – 🚇 Metro per Stesicoro'."""
+        icon_map = {
+            TransportType.METRO: "🚇 Metro",
+            TransportType.TRENO: "🚆 Treno",
+            TransportType.BUS: "🚌 Bus",
+            TransportType.QUALSIASI: "🚍 Mezzo",
+        }
+        badge = icon_map.get(self.transport_type, "🚍 Mezzo")
+
+        clean_route = (self.route_name or "").strip()
+        if clean_route.upper() in ("METROPOLITANA", "METRO", "SUPERFICIE", "TRENO", "BUS", "NULL", ""):
+            mode_desc = badge
+        else:
+            mode_desc = f"{badge} {clean_route}"
+
+        dest = (self.headsign or "").strip().replace("*", "")
+        if dest.isupper():
+            dest = dest.title()
+
+        if dest:
+            dest_lower = dest.lower()
+            if dest_lower.startswith("per "):
+                dest_part = dest
+            elif dest_lower.startswith("verso "):
+                dest_part = dest
+            elif dest_lower.startswith("direzione "):
+                dest_part = f"per {dest[10:].strip()}"
+            else:
+                dest_part = f"per {dest}"
+            return f"{self.departure_time} – {mode_desc} {dest_part}"
+
+        return f"{self.departure_time} – {mode_desc}"
+
+    def to_dict(self) -> dict:
+        return {
+            "departure_time": self.departure_time,
+            "transport_type": self.transport_type.value,
+            "route_name": self.route_name,
+            "headsign": self.headsign,
+            "stop_name": self.stop_name,
+            "stop_id": self.stop_id,
+            "trip_id": self.trip_id,
+            "display_line": self.display_line,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Departure":
+        return cls(
+            departure_time=data["departure_time"],
+            transport_type=TransportType(data["transport_type"]),
+            route_name=data.get("route_name", ""),
+            headsign=data.get("headsign", ""),
+            stop_name=data.get("stop_name", ""),
+            stop_id=data.get("stop_id", ""),
+            trip_id=data.get("trip_id", ""),
+        )
+
+
+@dataclass
 class TripSegment:
     transport_type: TransportType
     route_name: str

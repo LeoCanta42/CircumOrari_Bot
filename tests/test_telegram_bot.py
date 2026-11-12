@@ -1041,6 +1041,31 @@ async def test_location_handler_catania_and_far_network():
     assert "Nota di prossimità" in far_text
     assert "fuori dall'area" in far_text
     assert "https://www.google.com/maps/search/?api=1&query=" in far_text
+    assert "Prossime partenze" not in far_text
+
+
+def test_format_nearest_stops_message_departures():
+    """Verify format_nearest_stops_message shows upcoming departures when near stops and handles night gracefully."""
+    from circumorari_bot.bot.handlers.location import format_nearest_stops_message
+
+    # Daytime near Stesicoro (Catania center)
+    msg_day = format_nearest_stops_message(37.505, 15.087, current_time="08:00")
+    assert "📍 *Fermate più vicine alla tua posizione:*" in msg_day
+    assert "STESICORO" in msg_day
+    assert "🕒 *Prossime partenze da STESICORO:*" in msg_day
+    assert "🚇 Metro per Monte Po" in msg_day
+    assert "🚏 *Più vicine per tipologia di mezzo:*" in msg_day
+
+    # Late night near Stesicoro (outside operating hours)
+    msg_night = format_nearest_stops_message(37.505, 15.087, current_time="23:59")
+    assert "🕒 *Prossime partenze da STESICORO:*" in msg_night
+    assert "Nessuna corsa in partenza a breve o servizio terminato per oggi" in msg_night
+
+    # Far away (Rome coordinates) should omit departure board
+    msg_far = format_nearest_stops_message(41.9028, 12.4964, current_time="08:00")
+    assert "Nota di prossimità" in msg_far
+    assert "Prossime partenze" not in msg_far
+
 
 
 @pytest.mark.anyio

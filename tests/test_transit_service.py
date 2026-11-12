@@ -1,7 +1,7 @@
 """Unit tests for transit search and timetable calculation service."""
 
 import pytest
-from circumorari_bot.core.models import TransportType, FilterType
+from circumorari_bot.core.models import TransportType, FilterType, Departure
 from circumorari_bot.services.transit_service import transit_service
 
 
@@ -279,4 +279,102 @@ def test_download_and_sync_gtfs_explicit_vs_resolved_url(monkeypatch):
     gtfs_loader.download_and_sync_gtfs(feed_url=explicit)
     assert len(resolve_called) == 1  # count did not increase
     assert fetched_urls[-1] == explicit
+
+
+def test_get_upcoming_departures_metro():
+    """Verify upcoming metro departures: chronological order, non-terminus boarding only."""
+    deps = transit_service.get_upcoming_departures(
+        stop_name="STESICORO",
+        current_time="08:00",
+        limit=5,
+    )
+    assert len(deps) > 0
+    assert all(d.departure_time >= "08:00" for d in deps)
+    assert all(d.transport_type == TransportType.METRO for d in deps)
+    # Ensure terminus drop-offs (arriving at Stesicoro) are never included as departures
+    assert all("STESICORO" not in d.headsign.upper() for d in deps)
+    first = deps[0]
+    assert first.stop_name == "STESICORO"
+    assert "Monte Po" in first.display_line or "MONTE PO" in first.headsign.upper()
+    assert "🚇 Metro" in first.display_line
+
+
+def test_get_upcoming_departures_train_and_bus():
+    """Verify train and bus upcoming departures by stop_id and transport mode filter."""
+    # Paterno train departures
+    deps_train = transit_service.get_upcoming_departures(
+        stop_name="PATERNO'",
+        current_time="08:00",
+        limit=4,
+        transport_type=TransportType.TRENO,
+    )
+    assert len(deps_train) > 0
+    assert all(d.transport_type == TransportType.TRENO for d in deps_train)
+    assert any("🚆 Treno" in d.display_line for d in deps_train)
+
+    # Borgo bus stop by stop_id ('1123')
+    deps_bus = transit_service.get_upcoming_departures(
+        stop_id="1123",
+        current_time="08:00",
+        limit=4,
+    )
+    assert len(deps_bus) > 0
+    assert all(d.transport_type == TransportType.BUS for d in deps_bus)
+    assert any("🚌 Bus" in d.display_line for d in deps_bus)
+
+
+def test_get_upcoming_departures_empty_and_night():
+    """Verify handling of night hours (no trips) and nonexistent stop names."""
+    # Beyond last operating trip
+    deps_night = transit_service.get_upcoming_departures(
+        stop_name="STESICORO",
+        current_time="23:59",
+    )
+    assert deps_night == []
+
+    # Nonexistent stop
+    deps_none = transit_service.get_upcoming_departures(
+        stop_name="STOP_DOES_NOT_EXIST_9999",
+        current_time="08:00",
+    )
+    assert deps_none == []
+
+
+def test_departure_display_line_formatting():
+    """Verify clean single-line representation and destination prefixes."""
+    # Metro generic route name simplification
+    d1 = Departure(
+        departure_time="08:50",
+        transport_type=TransportType.METRO,
+        route_name="METROPOLITANA",
+        headsign="STESICORO",
+    )
+    assert d1.display_line == "08:50 – 🚇 Metro per Stesicoro"
+
+    # Bus with line number and already title-cased destination
+    d2 = Departure(
+        departure_time="09:05",
+        transport_type=TransportType.BUS,
+        route_name="1-2",
+        headsign="Adrano",
+    )
+    assert d2.display_line == "09:05 – 🚌 Bus 1-2 per Adrano"
+
+    # Headsign with "Direzione" prefix
+    d3 = Departure(
+        departure_time="10:15",
+        transport_type=TransportType.TRENO,
+        route_name="SUPERFICIE",
+        headsign="Direzione Randazzo",
+    )
+    assert d3.display_line == "10:15 – 🚆 Treno per Randazzo"
+
+    # Model to_dict and from_dict serialization
+    d1_dict = d1.to_dict()
+    assert d1_dict["departure_time"] == "08:50"
+    assert d1_dict["transport_type"] == "METRO"
+    d1_reconstructed = Departure.from_dict(d1_dict)
+    assert d1_reconstructed.departure_time == d1.departure_time
+    assert d1_reconstructed.display_line == d1.display_line
+
 
