@@ -1,7 +1,8 @@
 """AI assistant natural language chat message handler."""
 
+import asyncio
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from circumorari_bot.config import settings
 from circumorari_bot.core.rate_limiter import ai_rate_limiter
@@ -15,6 +16,43 @@ from circumorari_bot.bot.handlers.timetable import handle_wizard_text_input
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()
 settings_repo = SettingsRepository()
+
+
+def _format_window_label(minutes: int) -> str:
+    """Format sliding window duration in Italian."""
+    return "1 minuto" if minutes == 1 else f"{minutes} minuti"
+
+
+def _format_wait_time(seconds: int) -> str:
+    """Format remaining wait seconds into human-friendly Italian text."""
+    secs = max(1, int(seconds))
+    if secs < 60:
+        return "1 secondo" if secs == 1 else f"{secs} secondi"
+    mins, rem_secs = divmod(secs, 60)
+    min_label = _format_window_label(mins)
+    if rem_secs == 0:
+        return min_label
+    sec_label = "1 secondo" if rem_secs == 1 else f"{rem_secs} secondi"
+    return f"{min_label} e {sec_label}"
+
+
+def _build_ai_cost_disclaimer() -> str:
+    """Build explicit AI optionality, experimental status, fair-use limits, and non-refundable donation notice."""
+    max_req = settings_repo.get_ai_rate_limit_requests()
+    win_min = settings_repo.get_ai_rate_limit_window_minutes()
+    req_word = "richiesta" if max_req == 1 else "richieste"
+    win_label = _format_window_label(win_min)
+    return (
+        "💡 *Informazioni Importanti, Costi & Donazione:*\n"
+        "• *Funzione opzionale:* l'Assistente AI è completamente *opzionale*. "
+        "Tutte le altre funzioni del bot (orari, fermate vicine, notizie, tabelle PDF) "
+        "sono e restano *100% gratuite e open source* (es. /viaggio, /fermate, /posizione).\n"
+        f"• *Servizio sperimentale & limiti:* l'Assistente AI *non è stato testato con molti utenti*, "
+        f"applica limiti di fair use (*{max_req} {req_word} ogni {win_label}*) e *potrebbe occasionalmente non funzionare* "
+        "o subire rallentamenti/errori.\n"
+        "• *Non rimborsabile (Donazione):* l'importo pagato *non è rimborsabile*, poiché copre i costi operativi "
+        "dei modelli AI sostenuti dallo sviluppatore ed è in ogni caso considerato una *donazione* a supporto del progetto."
+    )
 
 
 async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -47,7 +85,7 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     uid = getattr(user, "id", None) or getattr(chat, "id", None)
     admin_flag = is_admin(uid) if isinstance(uid, int) else False
 
-    # If admin is currently in an interactive admin prompt (user search / broadcast), handle it here
+    # If admin is currently in an interactive admin prompt (user search / broadcast / ban / fair-use), handle it here
     user_data = getattr(context, "user_data", None)
     if admin_flag and isinstance(user_data, dict) and user_data.get("admin_state"):
         handled = await handle_admin_text_input(update, context)
@@ -69,6 +107,14 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if handled_wiz:
                 return
 
+    # Reject overly long AI messages before consuming a rate-limit slot or calling Gemini
+    if len(text) > 600:
+        await message.reply_text(
+            "⚠️ La domanda è troppo lunga (massimo 600 caratteri). Riformulala in modo più sintetico.",
+            reply_markup=main_menu_keyboard(is_admin_user=admin_flag),
+        )
+        return
+
     # Permission check: AI is restricted to paid, trial, and authorized users only
     if not users_repo.is_ai_allowed(chat.id):
         logger.info("Unauthorized AI access attempt from chat_id %s", chat.id)
@@ -77,6 +123,7 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         sub_days = settings_repo.get_sub_days()
         can_trial = not status.get("trial_used") and settings_repo.is_trial_enabled()
         is_expired = status.get("is_expired", False)
+        disclaimer = _build_ai_cost_disclaimer()
 
         if is_expired:
             exp_str = status.get("ai_expires_at") or "recente"
@@ -85,10 +132,7 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"Il tuo periodo di accesso all'Assistente AI è terminato il `{exp_str}` (UTC).\n\n"
                 f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
                 f"Per continuare ad utilizzarlo, puoi rinnovare l'accesso per altri {sub_days} giorni a soli *{price_str}*.\n\n"
-                "💡 *Perché un abbonamento?*\n"
-                "L'integrazione dei modelli linguistici AI genera costi computazionali e operativi sostenuti direttamente dallo sviluppatore. "
-                "Il pagamento copre queste spese e funge da donazione a supporto del progetto. "
-                "Tutte le altre funzioni (orari, fermate vicine, notizie, PDF) sono e rimangono *100% gratuite e open source* (es. /viaggio, /fermate, /posizione)."
+                f"{disclaimer}"
             )
         elif can_trial:
             restricted_msg = (
@@ -98,17 +142,15 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"🎁 *Hai a disposizione 1 Prova Gratuita di {settings_repo.get_trial_days()} giorni!*\n"
                 "Puoi attivarla subito gratuitamente senza alcun costo o impegno.\n\n"
                 f"Al termine, potrai rinnovare per {sub_days} giorni a soli *{price_str}*.\n\n"
-                "💡 *Trasparenza*: l'AI richiede un piccolo contributo per coprire i costi operativi dei modelli e sostenere "
-                "il progetto come donazione, mentre orari, fermate e notizie restano sempre 100% gratuiti e open source."
+                f"{disclaimer}"
             )
         else:
             restricted_msg = (
                 "🔒 *Assistente AI ad accesso limitato*\n\n"
                 "L'assistente conversazionale AI è attivo per gli utenti abbonati.\n\n"
                 f"🆔 Il tuo ID chat è: `{chat.id}`\n\n"
-                f"Puoi attivare l'accesso illimitato per {sub_days} giorni a soli *{price_str}*.\n\n"
-                "💡 Il pagamento copre i costi vivi dei modelli AI sostenuti dallo sviluppatore e sostiene il progetto come donazione. "
-                "Tutte le altre funzionalità (orari, fermate vicine, notizie, PDF) sono completamente gratuite e open source."
+                f"Puoi attivare l'accesso per {sub_days} giorni a soli *{price_str}*.\n\n"
+                f"{disclaimer}"
             )
 
         reply_markup = ai_subscription_prompt_keyboard(
@@ -124,20 +166,30 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    # Rate limit check: fair-use maximum requests per user per minute (admins bypass)
-    if not admin_flag:
-        allowed, retry_after = ai_rate_limiter.check_rate_limit(
+    # Dynamic Fair-Use rate limit check (admins bypass unless in test mode)
+    max_requests = settings_repo.get_ai_rate_limit_requests()
+    window_minutes = settings_repo.get_ai_rate_limit_window_minutes()
+    window_seconds = window_minutes * 60
+    bypass_rate_limit = admin_flag and not settings_repo.get_admin_ai_test_mode(uid)
+
+    if not bypass_rate_limit:
+        allowed, retry_after, used_count = ai_rate_limiter.check_and_record(
             chat.id,
-            max_requests=settings.AI_RATE_LIMIT_PER_MINUTE,
-            window_seconds=settings.AI_RATE_LIMIT_WINDOW_SECONDS
+            max_requests=max_requests,
+            window_seconds=window_seconds,
         )
+        window_label = _format_window_label(window_minutes)
+        req_word = "richiesta" if max_requests == 1 else "richieste"
+
         if not allowed:
             logger.info("Rate limit exceeded for user %s: retry after %ds", chat.id, retry_after)
+            wait_str = _format_wait_time(retry_after)
             rate_limit_msg = (
                 "⏳ *Limite di richieste raggiunto*\n\n"
                 "Per garantire un servizio equo e performante a tutti i passeggeri, "
-                f"l'Assistente AI è limitato a un massimo di *{settings.AI_RATE_LIMIT_PER_MINUTE} richieste al minuto* per utente.\n\n"
-                f"Per favore, attendi *{retry_after} secondi* prima di inviare una nuova domanda."
+                f"l'Assistente AI è limitato a un massimo di *{max_requests} {req_word} ogni {window_label}* per utente "
+                f"(utilizzate: *{used_count}/{max_requests}*).\n\n"
+                f"Per favore, attendi *{wait_str}* prima di inviare una nuova domanda."
             )
             await message.reply_text(
                 rate_limit_msg,
@@ -146,10 +198,27 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return
 
-    # Let the user know the bot is thinking
-    await context.bot.send_chat_action(chat_id=chat.id, action="typing")
+        ai_task = asyncio.create_task(asyncio.to_thread(ai_service.answer_query, text))
+        tracking_msg = (
+            "⏳ *Elaborazione risposta AI in corso...*\n"
+            f"📊 _(Richiesta {used_count}/{max_requests} inviata nella finestra attuale di {window_label})_"
+        )
+        try:
+            await message.reply_text(tracking_msg, parse_mode="Markdown")
+        except Exception as exc:
+            logger.debug("Could not send AI tracking status message: %s", exc)
+        try:
+            await context.bot.send_chat_action(chat_id=chat.id, action="typing")
+        except Exception as exc:
+            logger.debug("Could not send typing chat action: %s", exc)
+        response = await ai_task
+    else:
+        try:
+            await context.bot.send_chat_action(chat_id=chat.id, action="typing")
+        except Exception as exc:
+            logger.debug("Could not send typing chat action: %s", exc)
+        response = await asyncio.to_thread(ai_service.answer_query, text)
 
-    response = ai_service.answer_query(text)
     try:
         await message.reply_text(
             response.answer,
@@ -184,6 +253,7 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         sub_days = settings_repo.get_sub_days()
         can_trial = not status.get("trial_used") and settings_repo.is_trial_enabled()
         is_expired = status.get("is_expired", False)
+        disclaimer = _build_ai_cost_disclaimer()
 
         if is_expired:
             exp_str = status.get("ai_expires_at") or "recente"
@@ -192,8 +262,7 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 f"Il tuo periodo di accesso all'Assistente AI è terminato il `{exp_str}` (UTC).\n\n"
                 f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
                 f"Puoi riattivare l'accesso per {sub_days} giorni a soli *{price_str}*.\n\n"
-                "💡 Il pagamento copre i costi vivi dei modelli AI sostenuti direttamente dallo sviluppatore e funge da donazione a supporto del progetto. "
-                "Orari, fermate vicine, notizie e tabelle PDF restano sempre 100% gratuiti e open source."
+                f"{disclaimer}"
             )
         elif can_trial:
             restricted_msg = (
@@ -203,16 +272,14 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 f"🎁 *Hai a disposizione 1 Prova Gratuita di {settings_repo.get_trial_days()} giorni!*\n"
                 "Attivala con un solo tocco senza inserire alcuna carta.\n\n"
                 f"Successivamente potrai rinnovare per {sub_days} giorni a soli *{price_str}*.\n\n"
-                "💡 Il contributo per l'AI copre i costi computazionali dei modelli sostenuti dallo sviluppatore e sostiene il bot come donazione, "
-                "mentre tutte le ricerche ordinarie e le fermate vicine sono totalmente gratuite."
+                f"{disclaimer}"
             )
         else:
             restricted_msg = (
                 "🔒 *Assistente AI ad accesso limitato*\n\n"
                 f"L'assistente conversazionale è disponibile per {sub_days} giorni a soli *{price_str}*.\n\n"
                 f"🆔 Il tuo ID chat è: `{chat_id}`\n\n"
-                "💡 Il pagamento copre le spese vive dei modelli AI sostenute dallo sviluppatore e supporta il progetto come donazione. "
-                "Tutte le altre funzioni di CircumOrari sono e rimarranno sempre 100% gratuite e open source."
+                f"{disclaimer}"
             )
 
         reply_markup = ai_subscription_prompt_keyboard(
@@ -244,6 +311,11 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     else:
         sub_info = "🟢 *Stato Accesso:* Abilitato"
 
+    max_req = settings_repo.get_ai_rate_limit_requests()
+    win_min = settings_repo.get_ai_rate_limit_window_minutes()
+    req_word = "richiesta" if max_req == 1 else "richieste"
+    win_label = _format_window_label(win_min)
+
     help_msg = (
         "🤖 *Assistente AI per la Mobilità*\n\n"
         f"{sub_info}\n\n"
@@ -253,7 +325,7 @@ async def ai_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "• _\"Orari della littorina da Paternò a Randazzo verso le 16\"_\n"
         "• _\"A che ora c'è la metro da Monte Po a Borgo stasera alle 20?\"_\n"
         "• _\"Dove posso scaricare i pdf degli orari?\"_\n\n"
-        "⚡ *Fair use*: massimo 3 richieste al minuto per utente per garantire disponibilità e tempi di risposta ottimali.\n\n"
+        f"⚡ *Fair use*: massimo *{max_req} {req_word} ogni {win_label}* per utente per garantire disponibilità e tempi di risposta ottimali.\n\n"
         "👉 Scrivi adesso la tua richiesta qui sotto!"
     )
     try:

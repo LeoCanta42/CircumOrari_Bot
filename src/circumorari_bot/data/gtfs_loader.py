@@ -6,7 +6,7 @@ import zipfile
 import logging
 from pathlib import Path
 from typing import Optional, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 from circumorari_bot.config import settings
@@ -40,6 +40,10 @@ def load_gtfs_from_zip(zip_bytes: bytes, db_path: Optional[Path] = None) -> Tupl
     for req in required:
         if req not in file_list:
             raise ValueError(f"Invalid GTFS feed: missing {req}")
+
+    total_uncompressed = sum(z.getinfo(req).file_size for req in required)
+    if total_uncompressed > 100 * 1024 * 1024:
+        raise ValueError("GTFS archive exceeds maximum allowed uncompressed size (100 MB)")
 
     # Read and classify routes
     routes_data = []
@@ -169,9 +173,28 @@ def enrich_existing_stops_cities(db_path: Optional[Path] = None, allow_network: 
     return updated
 
 
-def resolve_gtfs_url(page_url: Optional[str] = None) -> str:
+def _is_trusted_circumetnea_url(url: str) -> bool:
+    """Validate URL uses http/https and points strictly to circumetnea.it."""
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        return parsed.scheme.lower() in ("http", "https") and (
+            host == "circumetnea.it" or host.endswith(".circumetnea.it")
+        )
+    except Exception:
+        return False
+
+
+def resolve_gtfs_url(page_url: Optional[str] = None, _depth: int = 0) -> str:
     """Dynamically scrape and resolve the latest GTFS feed download URL from circumetnea.it."""
+    if _depth > 2:
+        return settings.CIRCUMETNEA_GTFS_URL
+
     target_page = page_url or settings.CIRCUMETNEA_GTFS_PAGE_URL
+    if not _is_trusted_circumetnea_url(target_page):
+        logger.warning("Untrusted GTFS page URL rejected: %s", target_page)
+        return settings.CIRCUMETNEA_GTFS_URL
+
     headers = {"User-Agent": "CircumOrari-Bot/2.0 (+https://github.com/LeoCanta42/CircumOrari_Bot)"}
 
     try:
@@ -196,17 +219,20 @@ def resolve_gtfs_url(page_url: Optional[str] = None) -> str:
             )
             if is_download and has_gtfs_keyword:
                 full_url = urljoin(target_page, href)
-                logger.info("Dynamically resolved GTFS download URL: %s", full_url)
-                return full_url
+                if _is_trusted_circumetnea_url(full_url):
+                    logger.info("Dynamically resolved GTFS download URL: %s", full_url)
+                    return full_url
 
             # Secondary subpage link (e.g. if scraping "le nostre linee" or open-data index)
             if "gtfs" in href_lower and ("pubblicazione" in href_lower or "open-data" in href_lower):
-                subpage_link = urljoin(target_page, href)
+                candidate = urljoin(target_page, href)
+                if _is_trusted_circumetnea_url(candidate):
+                    subpage_link = candidate
 
         # If a GTFS publication subpage was found and not yet visited, follow it
         if subpage_link and subpage_link != target_page:
             logger.info("Following GTFS publication page link: %s", subpage_link)
-            return resolve_gtfs_url(page_url=subpage_link)
+            return resolve_gtfs_url(page_url=subpage_link, _depth=_depth + 1)
 
         logger.warning(
             "No GTFS download link found on %s, falling back to configured default: %s",

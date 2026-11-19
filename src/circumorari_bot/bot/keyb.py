@@ -51,8 +51,9 @@ def nearest_stops_result_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def admin_panel_keyboard() -> InlineKeyboardMarkup:
+def admin_panel_keyboard(maintenance_mode: bool = False) -> InlineKeyboardMarkup:
     """Dashboard keyboard for administrative management."""
+    maint_label = "🛠 Manutenzione: 🔴 ATTIVA" if maintenance_mode else "🛠 Manutenzione: 🟢 OFF"
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("👥 Gestione Utenti", callback_data="adm_users:all:0"),
@@ -71,12 +72,50 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("⚡ Resetta Comandi Bot", callback_data="adm_reset_commands"),
         ],
         [
+            InlineKeyboardButton(maint_label, callback_data="adm_maint"),
             InlineKeyboardButton("🧹 Pulisci Inattivi (60gg)", callback_data="adm_prune"),
         ],
         [
             InlineKeyboardButton("⬅️ Menu Principale", callback_data="menu_main"),
         ],
     ])
+
+
+def admin_maintenance_keyboard(is_active: bool, waiting_count: int = 0) -> InlineKeyboardMarkup:
+    """Keyboard for toggling maintenance mode and notifying waiting users when back online."""
+    rows = []
+    if is_active:
+        rows.append([
+            InlineKeyboardButton("🟢 Ripristina Funzionamento Normale", callback_data="adm_maint:off"),
+        ])
+        if waiting_count > 0:
+            rows.append([
+                InlineKeyboardButton(
+                    f"🟢 Ripristina + Avvisa ({waiting_count}) Utenti",
+                    callback_data="adm_maint:off_notify",
+                ),
+            ])
+        rows.append([
+            InlineKeyboardButton("🔄 Aggiorna Conteggio", callback_data="adm_maint"),
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton("🔴 Attiva Modalità Manutenzione", callback_data="adm_maint:on"),
+        ])
+        if waiting_count > 0:
+            rows.append([
+                InlineKeyboardButton(
+                    f"📢 Avvisa {waiting_count} Utenti (Bot Online)",
+                    callback_data="adm_maint:notify",
+                ),
+            ])
+            rows.append([
+                InlineKeyboardButton("🧹 Svuota Lista Attesa", callback_data="adm_maint:clear"),
+            ])
+    rows.append([
+        InlineKeyboardButton("⬅️ Pannello Admin", callback_data="adm_menu"),
+    ])
+    return InlineKeyboardMarkup(rows)
 
 
 def admin_users_list_keyboard(
@@ -99,10 +138,12 @@ def admin_users_list_keyboard(
     f_all = "🔹 Tutti" if filter_mode == "all" else "Tutti"
     f_sub = "🔹 🔔 Iscritti" if filter_mode == "sub" else "🔔 Iscritti"
     f_ai = "🔹 🤖 AI" if filter_mode == "ai" else "🤖 AI"
+    f_ban = "🔹 🚫 Bannati" if filter_mode == "banned" else "🚫 Bannati"
     keyboard.append([
         InlineKeyboardButton(f_all, callback_data="adm_users:all:0"),
         InlineKeyboardButton(f_sub, callback_data="adm_users:sub:0"),
         InlineKeyboardButton(f_ai, callback_data="adm_users:ai:0"),
+        InlineKeyboardButton(f_ban, callback_data="adm_users:banned:0"),
     ])
 
     for u in page_users:
@@ -111,8 +152,11 @@ def admin_users_list_keyboard(
         fname = u.get("first_name")
         is_sub = bool(u.get("is_subscribed"))
         is_ai = bool(u.get("ai_allowed"))
+        is_banned = bool(u.get("is_banned"))
 
         badges = ""
+        if is_banned:
+            badges += "🚫"
         if is_ai:
             badges += "🤖"
         if is_sub:
@@ -162,39 +206,51 @@ def admin_user_detail_keyboard(
     is_sub = bool(user.get("is_subscribed"))
     is_ai = bool(user.get("ai_allowed"))
     trial_used = bool(user.get("trial_used"))
+    is_banned = bool(user.get("is_banned"))
 
     sub_btn = (
-        InlineKeyboardButton("🔕 Disattiva Notifiche", callback_data=f"adm_u_sub:{cid}:0:{back_filter}:{back_page}")
+        InlineKeyboardButton("🔕 Disattiva Notifiche", callback_data=f"adm_u_sub:{cid}:0:{back_filter}:{back_page}"[:64])
         if is_sub
-        else InlineKeyboardButton("🔔 Attiva Notifiche", callback_data=f"adm_u_sub:{cid}:1:{back_filter}:{back_page}")
+        else InlineKeyboardButton("🔔 Attiva Notifiche", callback_data=f"adm_u_sub:{cid}:1:{back_filter}:{back_page}"[:64])
     )
     ai_btn = (
-        InlineKeyboardButton("🚫 Revoca AI", callback_data=f"adm_u_ai:{cid}:0:{back_filter}:{back_page}")
+        InlineKeyboardButton("🚫 Revoca AI", callback_data=f"adm_u_ai:{cid}:0:{back_filter}:{back_page}"[:64])
         if is_ai
-        else InlineKeyboardButton("🟢 Abilita AI", callback_data=f"adm_u_ai:{cid}:1:{back_filter}:{back_page}")
+        else InlineKeyboardButton("🟢 Abilita AI", callback_data=f"adm_u_ai:{cid}:1:{back_filter}:{back_page}"[:64])
+    )
+    ban_row = (
+        [
+            InlineKeyboardButton("✅ Sbanna Utente", callback_data=f"adm_u_unban:{cid}:{back_filter}:{back_page}"[:64]),
+            InlineKeyboardButton("✏️ Modifica Motivo", callback_data=f"adm_u_ban_ask:{cid}:{back_filter}:{back_page}"[:64]),
+        ]
+        if is_banned
+        else [
+            InlineKeyboardButton("🚫 Banna Utente", callback_data=f"adm_u_ban_ask:{cid}:{back_filter}:{back_page}"[:64]),
+        ]
     )
 
     rows = [
         [
-            InlineKeyboardButton("➕ +30gg AI", callback_data=f"adm_u_add30:{cid}:{back_filter}:{back_page}"),
-            InlineKeyboardButton("🎁 Prova 3gg", callback_data=f"adm_u_trial:{cid}:{back_filter}:{back_page}"),
+            InlineKeyboardButton("➕ +30gg AI", callback_data=f"adm_u_add30:{cid}:{back_filter}:{back_page}"[:64]),
+            InlineKeyboardButton("🎁 Prova 3gg", callback_data=f"adm_u_trial:{cid}:{back_filter}:{back_page}"[:64]),
         ],
         [
-            InlineKeyboardButton("♾️ Accesso Illimitato", callback_data=f"adm_u_perm:{cid}:{back_filter}:{back_page}"),
+            InlineKeyboardButton("♾️ Accesso Illimitato", callback_data=f"adm_u_perm:{cid}:{back_filter}:{back_page}"[:64]),
             ai_btn,
         ],
         [
             InlineKeyboardButton(
                 "🔄 Resetta Prova" if trial_used else "✅ Prova Non Usata",
-                callback_data=f"adm_u_rtrial:{cid}:{back_filter}:{back_page}"
+                callback_data=f"adm_u_rtrial:{cid}:{back_filter}:{back_page}"[:64]
             ),
             sub_btn,
         ],
+        ban_row,
         [
-            InlineKeyboardButton("🗑 Cancella Utente (GDPR)", callback_data=f"adm_u_del_ask:{cid}:{back_filter}:{back_page}"),
+            InlineKeyboardButton("🗑 Cancella Utente (GDPR)", callback_data=f"adm_u_del_ask:{cid}:{back_filter}:{back_page}"[:64]),
         ],
         [
-            InlineKeyboardButton("⬅️ Lista Utenti", callback_data=f"adm_users:{back_filter}:{back_page}"),
+            InlineKeyboardButton("⬅️ Lista Utenti", callback_data=f"adm_users:{back_filter}:{back_page}"[:64]),
             InlineKeyboardButton("🛠 Pannello Admin", callback_data="adm_menu"),
         ],
     ]
@@ -205,11 +261,13 @@ def admin_ai_settings_keyboard(
     current_settings: dict,
     admin_test_mode: bool = False
 ) -> InlineKeyboardMarkup:
-    """Keyboard for managing AI subscription prices, duration, trial and payments (strictly Telegram Stars)."""
+    """Keyboard for managing AI subscription prices, duration, trial, fair-use limits and payments (strictly Telegram Stars)."""
     trial_enabled = current_settings.get("trial_enabled", True)
     trial_days = current_settings.get("trial_days", 3)
     sub_days = current_settings.get("sub_days", 30)
     stars = current_settings.get("sub_stars", 50)
+    rl_req = current_settings.get("ai_rate_limit_requests", 3)
+    rl_min = current_settings.get("ai_rate_limit_window_minutes", 10)
 
     trial_toggle_label = "🎁 Prova: 🟢 ON (Attiva)" if trial_enabled else "🎁 Prova: 🔴 OFF (Spenta)"
 
@@ -219,6 +277,22 @@ def admin_ai_settings_keyboard(
         InlineKeyboardButton(f"{'✅ ' if stars == 25 else ''}25⭐", callback_data="adm_ai_cfg:stars:25"),
         InlineKeyboardButton(f"{'✅ ' if stars == 50 else ''}50⭐", callback_data="adm_ai_cfg:stars:50"),
         InlineKeyboardButton(f"{'✅ ' if stars == 100 else ''}100⭐", callback_data="adm_ai_cfg:stars:100"),
+    ]
+
+    rl_req_row = [
+        InlineKeyboardButton("⚡ Req", callback_data="noop"),
+        InlineKeyboardButton(f"{'✅ ' if rl_req == 1 else ''}1", callback_data="adm_ai_cfg:rl_req:1"),
+        InlineKeyboardButton(f"{'✅ ' if rl_req == 3 else ''}3", callback_data="adm_ai_cfg:rl_req:3"),
+        InlineKeyboardButton(f"{'✅ ' if rl_req == 5 else ''}5", callback_data="adm_ai_cfg:rl_req:5"),
+        InlineKeyboardButton(f"{'✅ ' if rl_req == 10 else ''}10", callback_data="adm_ai_cfg:rl_req:10"),
+    ]
+
+    rl_min_row = [
+        InlineKeyboardButton("⏳ Min", callback_data="noop"),
+        InlineKeyboardButton(f"{'✅ ' if rl_min == 1 else ''}1m", callback_data="adm_ai_cfg:rl_min:1"),
+        InlineKeyboardButton(f"{'✅ ' if rl_min == 5 else ''}5m", callback_data="adm_ai_cfg:rl_min:5"),
+        InlineKeyboardButton(f"{'✅ ' if rl_min == 10 else ''}10m", callback_data="adm_ai_cfg:rl_min:10"),
+        InlineKeyboardButton(f"{'✅ ' if rl_min == 30 else ''}30m", callback_data="adm_ai_cfg:rl_min:30"),
     ]
 
     return InlineKeyboardMarkup([
@@ -238,6 +312,11 @@ def admin_ai_settings_keyboard(
             InlineKeyboardButton(f"{'✅ ' if sub_days == 60 else ''}60gg", callback_data="adm_ai_cfg:sub_days:60"),
         ],
         price_row,
+        rl_req_row,
+        rl_min_row,
+        [
+            InlineKeyboardButton("✏️ Personalizza Fair Use (Req / Min)", callback_data="adm_ai_cfg:rl_custom"),
+        ],
         [
             InlineKeyboardButton("🧹 Disattiva Utenti Scaduti Adesso", callback_data="adm_ai_cfg:clean_expired"),
         ],

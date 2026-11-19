@@ -40,7 +40,8 @@ Puoi cercare direttamente senza usare i bottoni:
 Puoi scrivere liberamente come a una persona:
 _"A che ora c'è la metro da Monte Po a Stesicoro?"_
 _"C'è un treno da Randazzo alle 12:30?"_
-L'Assistente AI offre 1 prova gratuita e successivamente un abbonamento di 30 giorni effettivi. L'accesso AI richiede un piccolo contributo economico unicamente per coprire i costi operativi e dei modelli sostenuti direttamente dallo sviluppatore, fungendo anche da donazione a supporto del progetto. Tutte le altre funzionalità del bot (orari, fermate vicine, notizie, PDF ufficiali) sono e rimangono completamente gratuite e open-source. Per gestire il tuo piano usa il comando /abbonamento.
+L'Assistente AI è una *funzionalità completamente opzionale*: tutte le altre funzioni del bot (orari, fermate vicine, notizie, PDF ufficiali) sono e rimangono *100% gratuite e open-source*.
+L'AI offre 1 prova gratuita e un successivo abbonamento di 30 giorni effettivi. Trattandosi di una funzione sperimentale che *non è stata testata con molti utenti*, è soggetta a limiti di fair-use e *potrebbe occasionalmente non funzionare* o avere errori. L'importo versato *non è rimborsabile*, in quanto copre i costi operativi dei modelli sostenuti direttamente dallo sviluppatore ed è in ogni caso considerato una *donazione* a supporto del progetto. Per gestire il tuo piano usa /abbonamento.
 
 5. *Avvisi e Notifiche:*
 Puoi iscriverti agli avvisi in tempo reale su scioperi e ritardi premendo il pulsante *Notifiche & Avvisi* o inviando il comando /iscriviti (e disattivare con /disiscriviti).
@@ -50,7 +51,7 @@ Quando utilizzi il bot, vengono memorizzati `chat_id`, eventuale `@username`, no
 
 👨‍💻 *Sviluppatore & Progetto:*
 Creato e sviluppato in modo indipendente da *LeoCanta42*.
-Tutte le funzioni ordinarie di consultazione orari, fermate e avvisi sono gratuite e open-source. L'abbonamento all'Assistente AI copre i costi vivi dell'infrastruttura ed è una donazione per sostenere lo sviluppo continuo del bot.
+Tutte le funzioni ordinarie di consultazione orari, fermate e avvisi sono gratuite e open-source. L'accesso opzionale all'Assistente AI non è testato su larga scala, può avere limiti o malfunzionamenti occasionali e il contributo non è rimborsabile: copre i costi operativi dell'infrastruttura ed è una donazione per sostenere lo sviluppo continuo del bot.
 Progetto open-source disponibile su [GitHub](https://github.com/LeoCanta42/CircumOrari_Bot)."""
 
 
@@ -58,7 +59,7 @@ PRIVACY_TEXT = """🔒 *Informativa sulla Privacy & GDPR (Regolamento UE 2016/67
 
 • *Finalità del servizio:* Questo bot fornisce informazioni su orari, linee e avvisi di servizio della Ferrovia Circumetnea e Metropolitana di Catania.
 • *Registrazione Tecnica e Dati Trattati (Art. 5 e Art. 6):* Quando interagisci con il bot in chat privata, il sistema registra il tuo `chat_id` tecnico, l'eventuale `@username`, il nome (`first_name`) e il timestamp di ultimo utilizzo (`last_active`), impostando **notifiche disattivate** e **accesso AI disabilitato** per impostazione predefinita.
-• *Pagamenti e Abbonamenti AI (Minimizzazione dei Dati):* Quando attivi l'abbonamento all'Assistente AI (30 giorni effettivi in Telegram Stars) o la prova gratuita una tantum di 3 giorni, il bot **NON** raccoglie né memorizza numeri di carta, dati bancari o indirizzi di fatturazione. I pagamenti sono elaborati in sicurezza direttamente da Telegram tramite Telegram Stars. Vengono memorizzati solo la data di scadenza dell'accesso (`ai_expires_at`) e il flag dell'avvenuta fruizione della prova (`trial_used`). Alla scadenza, gli accessi vengono disattivati automaticamente senza rinnovi a sorpresa.
+• *Pagamenti e Abbonamenti AI (Minimizzazione dei Dati):* Quando attivi l'abbonamento opzionale all'Assistente AI (30 giorni effettivi in Telegram Stars) o la prova gratuita una tantum di 3 giorni, il bot **NON** raccoglie né memorizza numeri di carta, dati bancari o indirizzi di fatturazione. I pagamenti sono elaborati in sicurezza direttamente da Telegram tramite Telegram Stars. L'importo versato per l'AI opzionale *non è rimborsabile*, copre i costi operativi dei modelli ed è considerato una *donazione* a supporto del progetto (l'AI non è stata testata con molti utenti e può occasionalmente non funzionare). Vengono memorizzati solo la data di scadenza dell'accesso (`ai_expires_at`) e il flag dell'avvenuta fruizione della prova (`trial_used`). Alla scadenza, gli accessi vengono disattivati automaticamente senza rinnovi a sorpresa.
 • *Consenso alle Notifiche (Opt-in esplicito):* Nessun utente viene iscritto automaticamente agli avvisi broadcast. La ricezione delle notifiche avviene solo su esplicita attivazione tramite pulsante dedicato o comando /iscriviti (disattivabile in qualsiasi momento con /disiscriviti).
 • *Nessuna profilazione o cessione a terzi:* Non effettuiamo tracciamento pubblicitario o profilazione commerciale e nessun dato viene ceduto o condiviso con terze parti.
 • *Periodo di conservazione (Auto-Clean 60 giorni):* I record degli utenti inattivi da oltre 60 giorni (privi di abbonamento attivo) vengono rimossi automaticamente dal database.

@@ -14,6 +14,17 @@ from circumorari_bot.data.db import get_persistent_db as get_db
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_NEWS_URL = "https://www.circumetnea.it/category/news/"
+
+
+def _sanitize_news_url(url: Optional[str]) -> str:
+    """Allow only http/https news URLs, falling back to official news page."""
+    cleaned = (url or "").strip()
+    if cleaned.startswith(("http://", "https://")):
+        return cleaned
+    return DEFAULT_NEWS_URL
+
+
 def clean_html(raw_html: str) -> str:
     """Strip HTML tags and clean up whitespace."""
     if not raw_html:
@@ -60,17 +71,18 @@ class NewsService:
 
         for it in items[:limit]:
             title = it.findtext("title") or "Avviso Circumetnea"
-            link = it.findtext("link") or ""
+            raw_link = (it.findtext("link") or "").strip()
+            link = _sanitize_news_url(raw_link)
             pub_date = it.findtext("pubDate") or ""
             desc = it.findtext("description") or ""
-            guid = it.findtext("guid") or link
+            guid = (it.findtext("guid") or "").strip() or link
 
             results.append(NewsItem(
                 title=clean_html(title),
-                link=link.strip(),
+                link=link,
                 published_date=pub_date.strip(),
                 summary=clean_html(desc),
-                guid=guid.strip()
+                guid=guid
             ))
 
         return results
@@ -91,7 +103,7 @@ class NewsService:
                 continue
             title = title_tag.get_text(strip=True)
             a_tag = art.find("a", href=True)
-            link = a_tag["href"] if a_tag else url
+            link = _sanitize_news_url(a_tag["href"] if a_tag else url)
 
             date_tag = art.find(class_=re.compile("date|time|published", re.I))
             pub_date = date_tag.get_text(strip=True) if date_tag else None

@@ -231,3 +231,29 @@ def test_ai_rate_limiter_sliding_window():
     assert ok is True
 
 
+def test_ai_rate_limiter_check_and_record_10_min_window():
+    """Verify check_and_record returns atomic usage counts across a 10-minute (600s) window."""
+    from circumorari_bot.core.rate_limiter import AIRateLimiter
+
+    limiter = AIRateLimiter()
+    uid = 556677
+    t0 = 2000.0
+
+    # Requests 1..3 allowed with incremental count
+    assert limiter.check_and_record(uid, max_requests=3, window_seconds=600, current_time=t0) == (True, 0, 1)
+    assert limiter.check_and_record(uid, max_requests=3, window_seconds=600, current_time=t0 + 60) == (True, 0, 2)
+    assert limiter.check_and_record(uid, max_requests=3, window_seconds=600, current_time=t0 + 120) == (True, 0, 3)
+
+    # 4th request at t0 + 150s is rejected with retry_after = 600 - 150 = 450s and used = 3
+    allowed, retry_after, used = limiter.check_and_record(uid, max_requests=3, window_seconds=600, current_time=t0 + 150)
+    assert allowed is False
+    assert retry_after == 450
+    assert used == 3
+
+    # Once first request falls out of 600s window (t0 + 601), new request succeeds and slides count
+    allowed2, retry2, used2 = limiter.check_and_record(uid, max_requests=3, window_seconds=600, current_time=t0 + 601)
+    assert allowed2 is True
+    assert retry2 == 0
+    assert used2 == 3
+
+

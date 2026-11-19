@@ -133,7 +133,8 @@ class AIService:
             cur_time_str = ref_now.strftime("%H:%M")
             cur_date_str = ref_now.strftime("%Y-%m-%d")
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
             prompt = (
                 f"Sei l'analizzatore semantico della Ferrovia Circumetnea e Metropolitana di Catania.\n"
                 f"Data e ora corrente locale: {cur_date_str} {cur_time_str} (fuso orario Europe/Rome).\n"
@@ -158,7 +159,7 @@ class AIService:
                     "responseMimeType": "application/json",
                 },
             }
-            resp = requests.post(url, json=payload, timeout=8)
+            resp = requests.post(url, headers=headers, json=payload, timeout=8)
             if resp.status_code == 200:
                 data = resp.json()
                 raw_json = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -269,12 +270,12 @@ class AIService:
             has_explicit_time=has_explicit,
         )
 
-    def extract_entities(self, text: str, now: Optional[datetime] = None) -> ExtractedEntities:
+    def extract_entities(self, text: str, now: Optional[datetime] = None, use_llm: bool = True) -> ExtractedEntities:
         """Extract origin, destination, time, transport mode, filter type, and path/proximity intents."""
         ref_now = now or get_local_now()
         rule_time, has_explicit = resolve_query_time(text, ref_now)
 
-        if settings.GEMINI_API_KEY:
+        if use_llm and settings.GEMINI_API_KEY:
             llm_data = self._map_query_with_llm(text, now=ref_now)
             if llm_data:
                 orig = self._clean_entity(llm_data.get("origin"))
@@ -327,10 +328,10 @@ class AIService:
             )
         return ""
 
-    def answer_query(self, user_question: str, now: Optional[datetime] = None) -> AIQueryResponse:
+    def answer_query(self, user_question: str, now: Optional[datetime] = None, use_llm: bool = True) -> AIQueryResponse:
         """Process user natural language query with fuzzy stop matching, place geocoding, and path tracing."""
         ref_now = now or get_local_now()
-        entities = self.extract_entities(user_question, now=ref_now)
+        entities = self.extract_entities(user_question, now=ref_now, use_llm=use_llm)
         origin = entities.origin
         destination = entities.destination
         target_time = entities.time or ref_now.strftime("%H:%M")
@@ -432,7 +433,7 @@ class AIService:
         resolved_dest_name = (dest_res.resolved_label if dest_res and dest_res.resolved_label else destination)
         display_itineraries = itineraries or next_day_itineraries
 
-        if settings.GEMINI_API_KEY:
+        if use_llm and settings.GEMINI_API_KEY:
             try:
                 llm_answer = self._call_gemini(
                     question=user_question,
@@ -714,12 +715,13 @@ Linee guida per la risposta:
 """
 
         model = settings.GEMINI_MODEL or "gemini-3.5-flash-lite"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
         payload = {
             "contents": [{"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + prompt}]}],
             "generationConfig": {"temperature": 0.2, "maxOutputTokens": 900},
         }
-        resp = requests.post(url, json=payload, timeout=20)
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
         if resp.status_code == 200:
             data = resp.json()
             return data["candidates"][0]["content"]["parts"][0]["text"]

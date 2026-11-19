@@ -931,7 +931,7 @@
                     <span class="btn-text-full">📲 Scarica App</span>
                     <span class="btn-text-short">📲 App</span>
                 </button>
-                <a href="https://t.me/circumorari_bot" target="_blank" class="btn-telegram" title="Apri il Bot Telegram ufficiale">
+                <a href="https://t.me/circumorari_bot" target="_blank" rel="noopener noreferrer" class="btn-telegram" title="Apri il Bot Telegram ufficiale">
                     <span class="btn-text-full">📱 Bot Telegram (@circumorari_bot)</span>
                     <span class="btn-text-med">📱 Telegram</span>
                     <span class="btn-text-short">📱 Bot</span>
@@ -1062,11 +1062,11 @@
 
             <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 0.92rem; color: var(--text); line-height: 1.5; margin-bottom: 16px;">
                 💡 Sul web puoi calcolare direttamente e gratuitamente tutti gli itinerari, le corse e le fermate tramite il modulo di ricerca in alto.<br>
-                Se desideri testare l'assistente conversazionale in linguaggio naturale, puoi contattare l'amministratore indicando il tuo chat ID Telegram.<br>
-                ⚡ <em>Fair use</em>: per garantire risorse stabili ed eque per tutti i passeggeri, l'assistente AI applica un limite di <strong>3 richieste al minuto per utente</strong>.
+                L'Assistente AI su Telegram è una funzione <strong>opzionale</strong> (non ancora testata con molti utenti, può avere limiti o malfunzionamenti occasionali; eventuali contributi non sono rimborsabili e fungono da donazione).<br>
+                ⚡ <em>Fair use</em>: per garantire risorse stabili ed eque per tutti i passeggeri, l'assistente AI applica limiti di utilizzo (default <strong>3 richieste ogni 10 minuti per utente</strong>, configurabili dall'amministratore).
             </div>
 
-            <a href="https://t.me/circumorari_bot" target="_blank" class="btn-submit" style="background-color: #0284c7; text-align: center; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; gap: 8px;">
+            <a href="https://t.me/circumorari_bot" target="_blank" rel="noopener noreferrer" class="btn-submit" style="background-color: #0284c7; text-align: center; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; gap: 8px;">
                 💬 Apri Assistente su Telegram (@circumorari_bot)
             </a>
         </section>
@@ -1080,7 +1080,7 @@
                     <p class="card-description">Scarica le tabelle orarie complete emesse da Ferrovia Circumetnea.</p>
                 </div>
 
-                <a href="__METRO_URL__" target="_blank" class="doc-btn">
+                <a href="__METRO_URL__" target="_blank" rel="noopener noreferrer" class="doc-btn">
                     <div class="doc-meta">
                         <span class="doc-icon">🚇</span>
                         <div>
@@ -1091,7 +1091,7 @@
                     <span>⬇️</span>
                 </a>
 
-                <a href="__TRAIN_URL__" target="_blank" class="doc-btn">
+                <a href="__TRAIN_URL__" target="_blank" rel="noopener noreferrer" class="doc-btn">
                     <div class="doc-meta">
                         <span class="doc-icon">🚆</span>
                         <div>
@@ -1102,7 +1102,7 @@
                     <span>⬇️</span>
                 </a>
 
-                <a href="__BUS_URL__" target="_blank" class="doc-btn">
+                <a href="__BUS_URL__" target="_blank" rel="noopener noreferrer" class="doc-btn">
                     <div class="doc-meta">
                         <span class="doc-icon">🚌</span>
                         <div>
@@ -1138,10 +1138,10 @@
             🔒 <b>Privacy & Trasparenza (GDPR):</b> Questo portale web non utilizza cookie di profilazione o tracciamento e non memorizza dati personali.
         </div>
         <div class="footer-links">
-            <a href="https://www.circumetnea.it" target="_blank">Sito Ufficiale Circumetnea</a>
-            <a href="https://eticketing.circumetnea.it" target="_blank">Acquisto Titoli Online</a>
-            <a href="https://t.me/circumorari_bot" target="_blank">Bot Telegram (@circumorari_bot)</a>
-            <a href="https://github.com/LeoCanta42/CircumOrari_Bot" target="_blank">GitHub (Dev: LeoCanta42)</a>
+            <a href="https://www.circumetnea.it" target="_blank" rel="noopener noreferrer">Sito Ufficiale Circumetnea</a>
+            <a href="https://eticketing.circumetnea.it" target="_blank" rel="noopener noreferrer">Acquisto Titoli Online</a>
+            <a href="https://t.me/circumorari_bot" target="_blank" rel="noopener noreferrer">Bot Telegram (@circumorari_bot)</a>
+            <a href="https://github.com/LeoCanta42/CircumOrari_Bot" target="_blank" rel="noopener noreferrer">GitHub (Dev: LeoCanta42)</a>
         </div>
     </footer>
 
@@ -1156,25 +1156,28 @@
             'BUS': "🚌 <b>Autolinee:</b> collegamenti extraurbani su gomma nell'area etnea."
         };
 
-        // Escape HTML to prevent XSS
+        // Escape HTML (including quotes/apostrophes) to prevent XSS in text and attributes
         function escapeHtml(str) {
-            if (!str) return '';
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         // Format assistant answer cleanly without raw markdown artifacts
         function formatAssistantResponse(text) {
             if (!text) return '';
-            // 1. Remove markdown links [Label](url) -> just Label
-            let clean = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+            // 1. Remove markdown links [Label](url) -> just Label, then escape HTML safely
+            let clean = String(text).replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+            clean = clean.replace(/\\(['"])/g, '$1');
+            clean = escapeHtml(clean);
             // 2. Format bold tags and clean stray asterisks or underscores
             clean = clean.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             clean = clean.replace(/(^|[^\*])\*([^\*]+)\*([^\*]|$)/g, '$1$2$3');
             clean = clean.replace(/_([^_]+)_/g, '$1');
-            // 3. Remove backslash escapes
-            clean = clean.replace(/\\(['"])/g, '$1');
             // 4. Split into clean paragraphs and styled bullet items
             const lines = clean.split('\n');
             let html = '';
@@ -1681,7 +1684,7 @@
                 let html = '';
                 news.forEach(item => {
                     const title = escapeHtml(item.title || 'Avviso di Servizio');
-                    const link = (item.link && (item.link.startsWith('http://') || item.link.startsWith('https://'))) ? item.link : '#';
+                    const link = (item.link && (item.link.startsWith('http://') || item.link.startsWith('https://'))) ? escapeHtml(item.link) : '#';
                     const date = escapeHtml(item.published_date || '');
                     html += '<div class="news-item">';
                     html += '  <a href="' + link + '" target="_blank" rel="noopener noreferrer" class="news-title">' + title + '</a>';

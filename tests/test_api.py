@@ -508,11 +508,19 @@ def test_telegram_webhook_auto_sync_allowed_updates():
         mock_app.bot.set_webhook = AsyncMock(return_value=True)
 
         with patch("circumorari_bot.api.router.get_telegram_app", return_value=mock_app):
-            resp = client.get("/api/health?sync_webhook=true")
+            # Unauthenticated sync_webhook=true must fail with 403
+            resp_unauth = client.get("/api/health?sync_webhook=true")
+            assert resp_unauth.status_code == 403
+
+            resp = client.get(
+                "/api/health?sync_webhook=true",
+                headers={"x-telegram-bot-api-secret-token": "sync_secret"},
+            )
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "healthy"
+        assert data["storage_backend"]
         assert data["webhook"]["webhook_active"] is True
         assert "pre_checkout_query" in data["webhook"]["allowed_updates"]
 
@@ -557,4 +565,68 @@ def test_api_commands_sync_endpoint():
         mock_app.bot.set_my_commands.assert_awaited_once()
     finally:
         settings.WEBHOOK_SECRET = orig_secret
+
+
+def test_api_security_hardening():
+    """Verify fail-closed auth, path traversal defense, security headers, disabled OpenAPI docs, query bounds, and minimal health output."""
+    from circumorari_bot.config import settings
+
+    orig_wh = settings.WEBHOOK_SECRET
+    orig_cron = settings.CRON_SECRET
+    try:
+        # 1. Fail-closed 403 when secrets are unset (None / "") or wrong
+        for unset_val in (None, ""):
+            settings.WEBHOOK_SECRET = unset_val
+            settings.CRON_SECRET = unset_val
+            assert client.post("/api/webhook", json={"update_id": 1}).status_code == 403
+            assert client.get("/api/cron/news").status_code == 403
+            assert client.get("/api/cron/cleanup").status_code == 403
+            assert client.get("/api/commands/sync").status_code == 403
+            assert client.get("/api/health?sync_webhook=true").status_code == 403
+
+        settings.WEBHOOK_SECRET = "real_wh_secret"
+        settings.CRON_SECRET = "real_cron_secret"
+        assert client.post("/api/webhook", json={"update_id": 1}, headers={"x-telegram-bot-api-secret-token": "bad"}).status_code == 403
+        assert client.get("/api/cron/news", headers={"Authorization": "Bearer bad"}).status_code == 403
+        assert client.get("/api/cron/cleanup", params={"secret": "bad"}).status_code == 403
+        assert client.get("/api/commands/sync", params={"secret": "bad"}).status_code == 403
+        assert client.get("/api/health", params={"sync_webhook": "true", "secret": "bad"}).status_code == 403
+
+        # 2. Path traversal and invalid extension rejected with 404 on /static/icons/
+        assert client.get("/static/icons/..%2Frouter.py").status_code == 404
+        assert client.get("/static/icons/..%2F..%2Fmain.py").status_code == 404
+        assert client.get("/static/icons/icon.txt").status_code == 404
+        assert client.get("/static/icons/nonexistent.png").status_code == 404
+
+        # 3. Security headers present on /
+        home = client.get("/")
+        assert home.status_code == 200
+        assert home.headers.get("x-content-type-options") == "nosniff"
+        assert home.headers.get("x-frame-options") == "DENY"
+        assert home.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+        assert "geolocation=()" in home.headers.get("permissions-policy", "")
+        csp = home.headers.get("content-security-policy", "")
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+
+        # 4. Swagger / OpenAPI disabled when DEBUG=False
+        assert settings.DEBUG is False
+        assert client.get("/docs").status_code == 404
+        assert client.get("/openapi.json").status_code == 404
+
+        # 5. Query bounds enforced (422)
+        assert client.get("/api/stops?limit=99999").status_code == 422
+        assert client.get("/api/news?limit=500").status_code == 422
+        assert client.get("/api/timetable?origin=Catania&destination=Bronte&limit=999").status_code == 422
+
+        # 6. Public /api/health omits storage_backend and permanent_storage
+        pub_health = client.get("/api/health")
+        assert pub_health.status_code == 200
+        pub_data = pub_health.json()
+        assert pub_data == {"status": "healthy", "service": "circumorari-bot", "version": "2.0.0"}
+        assert "storage_backend" not in pub_data
+        assert "permanent_storage" not in pub_data
+    finally:
+        settings.WEBHOOK_SECRET = orig_wh
+        settings.CRON_SECRET = orig_cron
 

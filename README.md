@@ -23,7 +23,7 @@ Questo progetto è una riscrittura completa e architetturale del bot originale: 
     > *"Come posso andare da Catania a Bronte oggi alle 14:00?"*
     > *"Metro da Monte Po a Stesicoro verso le 9:00"*
   * L'assistente estrae origine, destinazione e orario, consulta il database GTFS e formula una risposta chiara ed accurata. Include un motore NLP integrato che funziona automaticamente anche se la chiave API non è ancora inserita.
-  * **Rate Limiting & Fair Use:** per garantire stabilità e risorse condivise, le richieste AI sono protette da un rate limiter thread-safe a finestra mobile (default: massimo **3 richieste al minuto per utente**, con notifica del tempo di attesa residuo e bypass automatico per gli amministratori).
+  * **Rate Limiting & Fair Use:** per garantire stabilità e risorse condivise, le richieste AI sono protette da un rate limiter thread-safe a finestra mobile (default: massimo **3 richieste ogni 10 minuti per utente**, personalizzabile dal pannello admin, con risposta immediata di stato/avanzamento in parallelo all'elaborazione, notifica del tempo di attesa residuo e bypass automatico per gli amministratori). L'Assistente AI è una funzione **opzionale** non ancora testata con molti utenti e i contributi non sono rimborsabili (coprono i costi operativi dei modelli e fungono da donazione).
 * **📢 Notizie e Avvisi in Tempo Reale:**
   * Monitoraggio automatico del feed RSS ufficiale `https://www.circumetnea.it/category/news/feed/`.
   * Rilevamento univoco degli articoli e trasmissione automatica al canale Telegram o agli utenti iscritti.
@@ -109,7 +109,8 @@ ADMIN_USER_IDS=123456789                    # Il tuo ID Telegram (ottienilo con 
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash-lite
 AI_RATE_LIMIT_PER_MINUTE=3
-AI_RATE_LIMIT_WINDOW_SECONDS=60
+AI_RATE_LIMIT_WINDOW_MINUTES=10
+AI_RATE_LIMIT_WINDOW_SECONDS=600
 ```
 
 ### 3. Sincronizzazione Orari GTFS
@@ -213,6 +214,8 @@ docker-compose logs -f
 | `/allow_ai` / `/disallow_ai <@user\|id>` *(Admin)* | Abilita o revoca l'accesso all'Assistente AI per un utente |
 | `/sub_user` / `/unsub_user <@user\|id>` *(Admin)* | Attiva o disattiva la sottoscrizione alle notifiche per un utente |
 | `/delete_user <@user\|id>` *(Admin)* | Cancella definitivamente il record di un utente dal database |
+| `/ban <@user\|id> [motivo]` *(Admin)* | Banna un utente e lo inserisce nella blacklist salvando l'eventuale motivo |
+| `/unban <@user\|id>` *(Admin)* | Rimuove un utente dalla blacklist e ripristina l'accesso al bot |
 | `/stats` *(Admin)* | Statistiche su utenti e database GTFS |
 | `/sync_gtfs` *(Admin)* | Risincronizza il database scaricando i dati da circumetnea.it |
 | `/broadcast <testo>` *(Admin)* | Invia un annuncio a tutti gli utenti iscritti |

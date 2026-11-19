@@ -34,10 +34,14 @@ async def viaggio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
+    text = text[:200]
     from circumorari_bot.services.ai_service import ai_service
 
-    resp = ai_service.answer_query(text)
-    await update.effective_message.reply_text(resp.answer, parse_mode="Markdown")
+    resp = ai_service.answer_query(text, use_llm=False)
+    try:
+        await update.effective_message.reply_text(resp.answer, parse_mode="Markdown")
+    except Exception:
+        await update.effective_message.reply_text(resp.answer)
 
 
 async def fermate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

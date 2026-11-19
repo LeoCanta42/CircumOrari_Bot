@@ -18,7 +18,7 @@ from circumorari_bot.bot.handlers.payments import (
     successful_payment_handler,
     abbonamento_command,
 )
-from circumorari_bot.bot.handlers.admin import admin_callback, is_admin
+from circumorari_bot.bot.handlers.admin import admin_callback, handle_admin_text_input, is_admin
 
 
 def test_settings_repository_defaults_and_mutation():
@@ -80,6 +80,35 @@ def test_settings_repository_defaults_and_mutation():
     repo.set_trial_days(3)
     repo.set_trial_enabled(True)
     repo.set_currency("XTR")
+
+
+def test_settings_repository_fair_use_defaults_and_mutation():
+    """Verify fair-use default settings (3 requests / 10 minutes) and persistence across updates."""
+    repo = SettingsRepository()
+    try:
+        repo.delete("ai_rate_limit_requests")
+        repo.delete("ai_rate_limit_window_minutes")
+
+        assert repo.get_ai_rate_limit_requests() == 3
+        assert repo.get_ai_rate_limit_window_minutes() == 10
+
+        assert repo.set_ai_rate_limit_requests(5) is True
+        assert repo.set_ai_rate_limit_window_minutes(15) is True
+        assert repo.get_ai_rate_limit_requests() == 5
+        assert repo.get_ai_rate_limit_window_minutes() == 15
+
+        # Clamped to minimum 1
+        assert repo.set_ai_rate_limit_requests(0) is True
+        assert repo.set_ai_rate_limit_window_minutes(-3) is True
+        assert repo.get_ai_rate_limit_requests() == 1
+        assert repo.get_ai_rate_limit_window_minutes() == 1
+
+        all_cfg = repo.get_all_ai_settings()
+        assert all_cfg["ai_rate_limit_requests"] == 1
+        assert all_cfg["ai_rate_limit_window_minutes"] == 1
+    finally:
+        repo.delete("ai_rate_limit_requests")
+        repo.delete("ai_rate_limit_window_minutes")
 
 
 def test_one_time_trial_and_reset():
@@ -358,11 +387,58 @@ async def test_admin_settings_customization_callbacks(monkeypatch):
     await admin_callback(update, context)
     query.answer.assert_awaited()
 
-    # Reset back to defaults
-    settings_repo.set_sub_stars(50)
-    settings_repo.set_sub_days(30)
-    settings_repo.set_trial_enabled(True)
-    settings_repo.set_currency("XTR")
+    try:
+        # Fair-use preset buttons
+        query.data = "adm_ai_cfg:rl_req:5"
+        await admin_callback(update, context)
+        assert settings_repo.get_ai_rate_limit_requests() == 5
+
+        query.data = "adm_ai_cfg:rl_min:30"
+        await admin_callback(update, context)
+        assert settings_repo.get_ai_rate_limit_window_minutes() == 30
+
+        # Custom fair-use prompt + invalid + valid text input
+        query.data = "adm_ai_cfg:rl_custom"
+        await admin_callback(update, context)
+        assert context.user_data.get("admin_state") == "awaiting_fair_use_config"
+        assert "Personalizza Fair Use" in query.edit_message_text.call_args[0][0]
+
+        msg_input = MagicMock(spec=Message)
+        msg_input.reply_text = AsyncMock()
+        upd_input = MagicMock(spec=Update)
+        upd_input.effective_user = admin_user
+        upd_input.effective_message = msg_input
+
+        # Invalid format keeps awaiting_fair_use_config state
+        msg_input.text = "abc"
+        consumed_bad = await handle_admin_text_input(upd_input, context)
+        assert consumed_bad is True
+        assert context.user_data.get("admin_state") == "awaiting_fair_use_config"
+        assert "Formato non valido" in msg_input.reply_text.call_args[0][0]
+
+        # Out-of-range values rejected
+        msg_input.text = "0 2000"
+        consumed_oob = await handle_admin_text_input(upd_input, context)
+        assert consumed_oob is True
+        assert context.user_data.get("admin_state") == "awaiting_fair_use_config"
+
+        # Valid custom input "5 15" updates both and clears state
+        msg_input.reply_text.reset_mock()
+        msg_input.text = "5 15"
+        consumed_ok = await handle_admin_text_input(upd_input, context)
+        assert consumed_ok is True
+        assert context.user_data.get("admin_state") is None
+        assert settings_repo.get_ai_rate_limit_requests() == 5
+        assert settings_repo.get_ai_rate_limit_window_minutes() == 15
+        assert "Fair Use aggiornato" in msg_input.reply_text.call_args[0][0]
+    finally:
+        # Reset back to defaults
+        settings_repo.set_sub_stars(50)
+        settings_repo.set_sub_days(30)
+        settings_repo.set_trial_enabled(True)
+        settings_repo.set_currency("XTR")
+        settings_repo.delete("ai_rate_limit_requests")
+        settings_repo.delete("ai_rate_limit_window_minutes")
 
 
 @pytest.mark.anyio

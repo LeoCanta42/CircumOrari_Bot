@@ -248,16 +248,23 @@ def _ensure_postgres_schema(compat_conn: _PgCompatConnection) -> None:
             is_subscribed INTEGER DEFAULT 0,
             ai_allowed INTEGER DEFAULT 0,
             ai_expires_at TIMESTAMP NULL,
-            trial_used INTEGER DEFAULT 0
+            trial_used INTEGER DEFAULT 0,
+            is_banned INTEGER DEFAULT 0,
+            ban_reason TEXT NULL,
+            banned_at TIMESTAMP NULL
         )
     """)
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_allowed INTEGER DEFAULT 0")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_subscribed INTEGER DEFAULT 0")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_expires_at TIMESTAMP NULL")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_used INTEGER DEFAULT 0")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned INTEGER DEFAULT 0")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason TEXT NULL")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMP NULL")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_sub ON users(is_subscribed)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_ai_exp ON users(ai_expires_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_banned ON users(is_banned)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS news_cache (
@@ -274,6 +281,13 @@ def _ensure_postgres_schema(compat_conn: _PgCompatConnection) -> None:
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_waitlist (
+            chat_id TEXT PRIMARY KEY,
+            contacted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     compat_conn.commit()
@@ -291,7 +305,10 @@ def _ensure_sqlite_persistent_schema(conn: sqlite3.Connection) -> None:
             is_subscribed INTEGER DEFAULT 0,
             ai_allowed INTEGER DEFAULT 0,
             ai_expires_at TIMESTAMP NULL,
-            trial_used INTEGER DEFAULT 0
+            trial_used INTEGER DEFAULT 0,
+            is_banned INTEGER DEFAULT 0,
+            ban_reason TEXT NULL,
+            banned_at TIMESTAMP NULL
         )
     """)
     for col_def in (
@@ -299,6 +316,9 @@ def _ensure_sqlite_persistent_schema(conn: sqlite3.Connection) -> None:
         "is_subscribed INTEGER DEFAULT 0",
         "ai_expires_at TIMESTAMP NULL",
         "trial_used INTEGER DEFAULT 0",
+        "is_banned INTEGER DEFAULT 0",
+        "ban_reason TEXT NULL",
+        "banned_at TIMESTAMP NULL",
     ):
         try:
             cur.execute(f"ALTER TABLE users ADD COLUMN {col_def}")
@@ -306,6 +326,7 @@ def _ensure_sqlite_persistent_schema(conn: sqlite3.Connection) -> None:
             pass
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_ai_exp ON users(ai_expires_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_banned ON users(is_banned)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS news_cache (
@@ -322,6 +343,13 @@ def _ensure_sqlite_persistent_schema(conn: sqlite3.Connection) -> None:
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_waitlist (
+            chat_id TEXT PRIMARY KEY,
+            contacted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()

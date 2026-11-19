@@ -9,6 +9,12 @@ from circumorari_bot.data.db import get_persistent_db as get_db
 logger = logging.getLogger(__name__)
 
 
+_USER_SELECT_COLS = (
+    "chat_id, username, first_name, last_active, is_subscribed, "
+    "ai_allowed, ai_expires_at, trial_used, is_banned, ban_reason, banned_at"
+)
+
+
 def _parse_utc_dt(val: Any) -> Optional[datetime]:
     """Parse a datetime object or timestamp string into timezone-aware UTC datetime."""
     if val is None:
@@ -147,6 +153,10 @@ class UsersRepository:
         try:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
+                try:
+                    cur.execute("DELETE FROM maintenance_waitlist WHERE chat_id = ?", (str(chat_id),))
+                except Exception:
+                    pass
                 res = cur.execute("DELETE FROM users WHERE chat_id = ?", (str(chat_id),))
                 return res.rowcount > 0
         except Exception as e:
@@ -172,17 +182,129 @@ class UsersRepository:
             return False
 
     def get_subscribed_chat_ids(self) -> List[str]:
-        """Return list of active subscribed chat IDs."""
+        """Return list of active (non-banned) subscribed chat IDs."""
         try:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
                 rows = cur.execute("""
                     SELECT chat_id FROM users
                     WHERE is_subscribed = 1
+                      AND COALESCE(is_banned, 0) = 0
                 """).fetchall()
                 return [row["chat_id"] for row in rows]
         except Exception as e:
             logger.warning("Error fetching subscribed users: %s", e)
+            return []
+
+    def is_user_banned(self, chat_id: int | str) -> bool:
+        """Return True if chat_id is banned (configured admins are never banned)."""
+        if not self._is_valid_chat_id(chat_id):
+            return False
+        cid_str = str(chat_id).strip()
+        try:
+            if int(cid_str) in settings.admin_user_ids:
+                return False
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            with get_db(self.db_path) as conn:
+                cur = conn.cursor()
+                row = cur.execute(
+                    "SELECT is_banned FROM users WHERE chat_id = ?",
+                    (cid_str,),
+                ).fetchone()
+                return bool(row and row["is_banned"] == 1)
+        except Exception as e:
+            logger.warning("Error checking ban status for %s: %s", chat_id, e)
+            return False
+
+    def get_ban_info(self, chat_id: int | str) -> Optional[dict]:
+        """Return ban details dict if user is banned, else None."""
+        if not self._is_valid_chat_id(chat_id):
+            return None
+        cid_str = str(chat_id).strip()
+        try:
+            if int(cid_str) in settings.admin_user_ids:
+                return None
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            with get_db(self.db_path) as conn:
+                cur = conn.cursor()
+                row = cur.execute(
+                    "SELECT is_banned, ban_reason, banned_at FROM users WHERE chat_id = ?",
+                    (cid_str,),
+                ).fetchone()
+                if row and row["is_banned"] == 1:
+                    return {
+                        "is_banned": True,
+                        "ban_reason": row["ban_reason"],
+                        "banned_at": row["banned_at"],
+                    }
+        except Exception as e:
+            logger.warning("Error fetching ban info for %s: %s", chat_id, e)
+        return None
+
+    def ban_user(self, chat_id: int | str, reason: Optional[str] = None) -> bool:
+        """Ban a user (add to blacklist) with an optional reason. Refuses banning system admins."""
+        if not self._is_valid_chat_id(chat_id):
+            return False
+        cid_str = str(chat_id).strip()
+        try:
+            if int(cid_str) in settings.admin_user_ids:
+                logger.warning("Refused attempt to ban system admin %s", cid_str)
+                return False
+        except (ValueError, TypeError):
+            pass
+
+        clean_reason = reason.strip()[:500] if isinstance(reason, str) and reason.strip() else None
+        try:
+            with get_db(self.db_path) as conn:
+                conn.execute("""
+                    INSERT INTO users (chat_id, last_active, is_subscribed, ai_allowed, is_banned, ban_reason, banned_at)
+                    VALUES (?, CURRENT_TIMESTAMP, 0, 0, 1, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(chat_id) DO UPDATE SET
+                        is_banned = 1,
+                        ban_reason = excluded.ban_reason,
+                        banned_at = CURRENT_TIMESTAMP
+                """, (cid_str, clean_reason))
+                return True
+        except Exception as e:
+            logger.error("Error banning user %s: %s", chat_id, e)
+            return False
+
+    def unban_user(self, chat_id: int | str) -> bool:
+        """Unban a user and clear saved ban reason/timestamp."""
+        if not self._is_valid_chat_id(chat_id):
+            return False
+        cid_str = str(chat_id).strip()
+        try:
+            with get_db(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE users
+                    SET is_banned = 0, ban_reason = NULL, banned_at = NULL
+                    WHERE chat_id = ?
+                """, (cid_str,))
+                return True
+        except Exception as e:
+            logger.error("Error unbanning user %s: %s", chat_id, e)
+            return False
+
+    def get_banned_chat_ids(self) -> List[str]:
+        """Return list of all banned chat IDs."""
+        try:
+            with get_db(self.db_path) as conn:
+                cur = conn.cursor()
+                rows = cur.execute("""
+                    SELECT chat_id FROM users
+                    WHERE is_banned = 1
+                    ORDER BY banned_at DESC, last_active DESC
+                """).fetchall()
+                return [row["chat_id"] for row in rows]
+        except Exception as e:
+            logger.warning("Error fetching banned users: %s", e)
             return []
 
     def is_ai_allowed(self, chat_id: int | str) -> bool:
@@ -190,7 +312,7 @@ class UsersRepository:
         
         Configured admins in settings.admin_user_ids are authorized by default unless they have
         explicitly enabled admin test buying mode to test customer payment flows.
-        For normal users, access is granted if ai_allowed == 1 AND (ai_expires_at is NULL or in future).
+        For normal users, access is granted if not banned, ai_allowed == 1, AND (ai_expires_at is NULL or in future).
         If ai_expires_at <= now, auto-deactivates the user and returns False.
         """
         try:
@@ -206,10 +328,10 @@ class UsersRepository:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
                 row = cur.execute(
-                    "SELECT ai_allowed, ai_expires_at FROM users WHERE chat_id = ?",
+                    "SELECT ai_allowed, ai_expires_at, is_banned FROM users WHERE chat_id = ?",
                     (str(chat_id),)
                 ).fetchone()
-                if not row or row["ai_allowed"] != 1:
+                if not row or row["is_banned"] == 1 or row["ai_allowed"] != 1:
                     return False
 
                 exp_raw = row["ai_expires_at"]
@@ -262,9 +384,11 @@ class UsersRepository:
                 "days_remaining": None,
                 "is_expired": False,
                 "trial_used": False,
+                "is_banned": False,
             }
 
-        ai_allowed = bool(user.get("ai_allowed"))
+        is_banned = False if is_admin_user else bool(user.get("is_banned"))
+        ai_allowed = bool(user.get("ai_allowed")) and not is_banned
         trial_used = bool(user.get("trial_used"))
         exp_raw = user.get("ai_expires_at")
         exp_dt = _parse_utc_dt(exp_raw)
@@ -298,12 +422,13 @@ class UsersRepository:
             "chat_id": cid_str,
             "is_admin": is_admin_user and not admin_test_mode,
             "admin_test_mode": admin_test_mode,
-            "ai_allowed": ai_allowed if admin_test_mode else (is_admin_user or ai_allowed),
+            "ai_allowed": False if is_banned else (ai_allowed if admin_test_mode else (is_admin_user or ai_allowed)),
             "is_permanent": is_permanent,
             "ai_expires_at": exp_dt.strftime("%Y-%m-%d %H:%M:%S") if exp_dt else None,
             "days_remaining": days_remaining,
             "is_expired": is_expired,
             "trial_used": trial_used,
+            "is_banned": is_banned,
         }
 
     def set_ai_allowed(self, chat_id: int | str, allowed: bool) -> bool:
@@ -478,13 +603,14 @@ class UsersRepository:
             return 0
 
     def get_ai_allowed_chat_ids(self) -> List[str]:
-        """Return list of chat IDs authorized to use AI."""
+        """Return list of non-banned chat IDs authorized to use AI."""
         try:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
                 rows = cur.execute("""
                     SELECT chat_id FROM users
                     WHERE ai_allowed = 1
+                      AND COALESCE(is_banned, 0) = 0
                 """).fetchall()
                 return [row["chat_id"] for row in rows]
         except Exception as e:
@@ -502,8 +628,8 @@ class UsersRepository:
         try:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
-                row = cur.execute("""
-                    SELECT chat_id, username, first_name, last_active, is_subscribed, ai_allowed, ai_expires_at, trial_used
+                row = cur.execute(f"""
+                    SELECT {_USER_SELECT_COLS}
                     FROM users
                     WHERE chat_id = ?
                        OR (username IS NOT NULL AND LOWER(username) = LOWER(?))
@@ -521,16 +647,16 @@ class UsersRepository:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
                 if not q:
-                    rows = cur.execute("""
-                        SELECT chat_id, username, first_name, last_active, is_subscribed, ai_allowed, ai_expires_at, trial_used
+                    rows = cur.execute(f"""
+                        SELECT {_USER_SELECT_COLS}
                         FROM users
                         ORDER BY last_active DESC
                         LIMIT ?
                     """, (limit,)).fetchall()
                 else:
                     like_q = f"%{q}%"
-                    rows = cur.execute("""
-                        SELECT chat_id, username, first_name, last_active, is_subscribed, ai_allowed, ai_expires_at, trial_used
+                    rows = cur.execute(f"""
+                        SELECT {_USER_SELECT_COLS}
                         FROM users
                         WHERE chat_id LIKE ?
                            OR (username IS NOT NULL AND LOWER(username) LIKE LOWER(?))
@@ -544,25 +670,31 @@ class UsersRepository:
             return []
 
     def get_all_users(self, filter_mode: str = "all", limit: int = 100) -> List[dict]:
-        """Return list of user dicts filtered by 'all', 'sub', or 'ai'."""
+        """Return list of user dicts filtered by 'all', 'sub', 'ai', or 'banned'."""
         try:
             with get_db(self.db_path) as conn:
                 cur = conn.cursor()
                 if filter_mode == "sub":
-                    sql = """
-                        SELECT chat_id, username, first_name, last_active, is_subscribed, ai_allowed, ai_expires_at, trial_used
+                    sql = f"""
+                        SELECT {_USER_SELECT_COLS}
                         FROM users WHERE is_subscribed = 1
                         ORDER BY last_active DESC LIMIT ?
                     """
                 elif filter_mode == "ai":
-                    sql = """
-                        SELECT chat_id, username, first_name, last_active, is_subscribed, ai_allowed, ai_expires_at, trial_used
+                    sql = f"""
+                        SELECT {_USER_SELECT_COLS}
                         FROM users WHERE ai_allowed = 1
                         ORDER BY last_active DESC LIMIT ?
                     """
+                elif filter_mode == "banned":
+                    sql = f"""
+                        SELECT {_USER_SELECT_COLS}
+                        FROM users WHERE is_banned = 1
+                        ORDER BY banned_at DESC, last_active DESC LIMIT ?
+                    """
                 else:
-                    sql = """
-                        SELECT chat_id, username, first_name, last_active, is_subscribed, ai_allowed, ai_expires_at, trial_used
+                    sql = f"""
+                        SELECT {_USER_SELECT_COLS}
                         FROM users
                         ORDER BY last_active DESC LIMIT ?
                     """
@@ -588,7 +720,7 @@ class UsersRepository:
         return None
 
     def get_stats(self) -> dict:
-        """Return user count statistics including AI subscriptions and trials."""
+        """Return user count statistics including AI subscriptions, trials, and banned users."""
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         try:
             with get_db(self.db_path) as conn:
@@ -606,6 +738,7 @@ class UsersRepository:
                     SELECT count(*) as cnt FROM users
                     WHERE ai_expires_at IS NOT NULL AND ai_expires_at <= ?
                 """, (now_str,)).fetchone()["cnt"]
+                banned = cur.execute("SELECT count(*) as cnt FROM users WHERE is_banned = 1").fetchone()["cnt"]
                 cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
                 active_30d = cur.execute("SELECT count(*) as cnt FROM users WHERE last_active >= ?", (cutoff,)).fetchone()["cnt"]
                 return {
@@ -615,6 +748,7 @@ class UsersRepository:
                     "ai_active_users": ai_active,
                     "ai_trial_users": trials_used,
                     "ai_expired_users": ai_expired,
+                    "banned_users": banned,
                     "active_last_30_days": active_30d
                 }
         except Exception as e:
@@ -622,11 +756,11 @@ class UsersRepository:
             return {
                 "total_users": 0, "subscribed_users": 0, "ai_allowed_users": 0,
                 "ai_active_users": 0, "ai_trial_users": 0, "ai_expired_users": 0,
-                "active_last_30_days": 0
+                "banned_users": 0, "active_last_30_days": 0
             }
 
     def prune_inactive(self, days: int = 60) -> int:
-        """Clean up old users not seen in N days while preserving subscribed and unexpired AI users."""
+        """Clean up old users not seen in N days while preserving subscribed, banned, and unexpired AI users."""
         try:
             now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
@@ -636,6 +770,7 @@ class UsersRepository:
                     DELETE FROM users
                     WHERE last_active < ?
                       AND is_subscribed = 0
+                      AND COALESCE(is_banned, 0) = 0
                       AND (
                           ai_allowed = 0
                           OR (ai_expires_at IS NOT NULL AND ai_expires_at <= ?)

@@ -18,6 +18,7 @@ from circumorari_bot.data.db import (
     get_persistence_status,
 )
 from circumorari_bot.data.gtfs_loader import load_gtfs_from_zip
+from circumorari_bot.data.settings_repo import SettingsRepository
 from circumorari_bot.data.users_repo import UsersRepository
 from circumorari_bot.core.models import NewsItem
 from circumorari_bot.services.news_service import NewsService
@@ -163,12 +164,21 @@ def test_postgres_compat_layer_survives_serverless_restarts(tmp_path, monkeypatc
     assert p_status["backend"] == "postgresql"
     assert p_status["permanent"] is True
 
-    # Container #1 (Day 1): Two users interact with bot + news cron caches an article
+    # Container #1 (Day 1): Users interact with bot, one gets banned with reason, fair-use customized, news cached
     repo1 = UsersRepository()
     repo1.register_or_update(chat_id=1001, username="admin_leo", first_name="Leo")
     repo1.register_or_update(chat_id=2002, username="viaggiatore_ct", first_name="Marco")
+    repo1.register_or_update(chat_id=3003, username="abusivo_ct", first_name="Spam")
     repo1.subscribe_user(chat_id=2002, username="viaggiatore_ct")
     repo1.set_ai_allowed(chat_id=2002, allowed=True)
+    assert repo1.ban_user(chat_id=3003, reason="Abuso test persistenza") is True
+
+    settings_repo1 = SettingsRepository()
+    assert settings_repo1.set_ai_rate_limit_requests(4) is True
+    assert settings_repo1.set_ai_rate_limit_window_minutes(15) is True
+    assert settings_repo1.set_maintenance_mode(True) is True
+    assert settings_repo1.add_maintenance_waitlist_user(2002) is True
+    assert settings_repo1.add_maintenance_waitlist_user(3003) is True  # banned user excluded on read
 
     news_svc = NewsService()
     seed_item = NewsItem(
@@ -197,11 +207,12 @@ def test_postgres_compat_layer_survives_serverless_restarts(tmp_path, monkeypatc
     # reset in-process schema cache completely!
     db_mod._PG_SCHEMA_INITIALIZED_URL = None
 
-    # Container #2 (Day 2): Both users and news_cache MUST still be intact!
+    # Container #2 (Day 2): Users, ban status/reason, fair-use settings and news_cache MUST still be intact!
     repo2 = UsersRepository()
     stats = repo2.get_stats()
-    assert stats["total_users"] == 2
+    assert stats["total_users"] == 3
     assert stats["subscribed_users"] == 1
+    assert stats["banned_users"] == 1
 
     u2 = repo2.get_user("viaggiatore_ct")
     assert u2 is not None
@@ -209,16 +220,29 @@ def test_postgres_compat_layer_survives_serverless_restarts(tmp_path, monkeypatc
     assert u2["is_subscribed"] == 1
     assert u2["ai_allowed"] == 1
 
+    assert repo2.is_user_banned(3003) is True
+    ban_info = repo2.get_ban_info(3003)
+    assert ban_info is not None
+    assert ban_info["ban_reason"] == "Abuso test persistenza"
+
+    settings_repo2 = SettingsRepository()
+    assert settings_repo2.get_ai_rate_limit_requests() == 4
+    assert settings_repo2.get_ai_rate_limit_window_minutes() == 15
+    assert settings_repo2.is_maintenance_mode() is True
+    waitlist = settings_repo2.get_maintenance_waitlist_users()
+    assert waitlist == ["2002"]  # banned user 3003 excluded!
+
     # Cron on Day 2 sees 0 unseen articles (news_cache persisted across cold start!)
     assert news_svc.check_for_new_articles() == []
 
-    # Verify prune_inactive preserves subscribed & AI-whitelisted users even if >90 days old
+    # Verify prune_inactive preserves subscribed, AI-whitelisted, and banned users even if >90 days old
     with db_mod.get_persistent_db() as conn:
         conn.execute("UPDATE users SET last_active = '2020-01-01 00:00:00'")
     pruned = repo2.prune_inactive(days=90)
-    # User 1001 (unsubscribed & ai_allowed=0) is pruned; User 2002 (subscribed & ai_allowed=1) is preserved!
+    # User 1001 (unsubscribed & ai_allowed=0 & not banned) is pruned; Users 2002 and 3003 are preserved!
     assert pruned == 1
     assert repo2.get_user(2002) is not None
+    assert repo2.get_user(3003) is not None
     assert repo2.get_user(1001) is None
 
 

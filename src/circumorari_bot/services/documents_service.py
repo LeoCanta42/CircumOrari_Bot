@@ -1,6 +1,7 @@
 """Circumetnea official PDF timetable documents scraper and resolver."""
 
 import logging
+from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 from circumorari_bot.config import settings
@@ -36,20 +37,25 @@ class DocumentsService:
 
             # Look through all download links and headings
             for a in soup.find_all("a", href=True):
-                href = a["href"]
+                raw_href = a["href"].strip()
+                if not raw_href:
+                    continue
+                resolved = urljoin(self.url, raw_href)
+                if urlparse(resolved).scheme.lower() not in ("http", "https"):
+                    continue
                 text = (a.get_text() or "").lower()
-                href_lower = href.lower()
+                href_lower = resolved.lower()
 
                 if "download" in href_lower or ".pdf" in href_lower:
                     if "metro" in href_lower or "metro" in text:
                         if not metro_url:
-                            metro_url = href
+                            metro_url = resolved
                     elif "tren" in href_lower or "ferrovia" in text or "tren" in text:
                         if not train_url:
-                            train_url = href
+                            train_url = resolved
                     elif "autolinee" in href_lower or "bus" in href_lower or "autolinee" in text:
                         if not bus_url:
-                            bus_url = href
+                            bus_url = resolved
 
             return DocumentsInfo(
                 metro_url=metro_url or DEFAULT_METRO_URL,

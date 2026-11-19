@@ -30,10 +30,11 @@ async def send_subscription_invoice(update: Update, context: ContextTypes.DEFAUL
 
     title = f"Abbonamento Assistente AI ({sub_days}gg)"
     description = (
-        f"Accesso illimitato {sub_days}gg all'Assistente AI CircumOrari. "
-        f"Il pagamento copre i costi vivi dei modelli e sostiene il progetto come donazione. "
-        f"Orari e fermate restano sempre gratuiti. Costo: {cost_label}."
-    )
+        f"Funzione AI opzionale ({sub_days}gg, {cost_label}). "
+        f"Non testata con molti utenti: ha limiti d'uso e può non funzionare. "
+        f"Non rimborsabile: copre i costi AI ed è una donazione per il progetto. "
+        f"Orari e fermate restano gratuiti."
+    )[:255]
     payload = f"ai_sub:{chat.id}:{int(time.time())}"
 
     try:
@@ -162,6 +163,10 @@ async def ai_sub_info_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     price_display = settings_repo.get_price_display()
     sub_days = settings_repo.get_sub_days()
     trial_days = settings_repo.get_trial_days()
+    max_req = settings_repo.get_ai_rate_limit_requests()
+    win_min = settings_repo.get_ai_rate_limit_window_minutes()
+    req_word = "richiesta" if max_req == 1 else "richieste"
+    win_label = "1 minuto" if win_min == 1 else f"{win_min} minuti"
 
     trial_status = "Utilizzata" if status.get("trial_used") else f"Disponibile ({trial_days} giorni)"
     exp_str = status.get("ai_expires_at") or "Nessun abbonamento attivo"
@@ -170,12 +175,18 @@ async def ai_sub_info_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     info_text = (
         "ℹ️ *Informazioni Abbonamento, Costi & Donazione AI*\n\n"
-        "💡 *Perché l'Assistente AI richiede un contributo?*\n"
+        "💡 *Funzione Opzionale — Perché un contributo?*\n"
+        "L'Assistente AI è una funzionalità completamente *opzionale*. "
         "Tutte le funzionalità ordinarie di CircumOrari (ricerca orari, fermate vicine, avvisi e tabelle PDF) "
         "sono e saranno sempre *100% gratuite e open source*.\n"
-        "L'integrazione con i modelli di intelligenza artificiale comporta invece costi computazionali vivi sostenuti "
-        "direttamente dallo sviluppatore. Il piccolo contributo mensile copre queste spese e funge da "
-        "donazione a supporto dello sviluppo e mantenimento del bot.\n\n"
+        "L'integrazione con i modelli di intelligenza artificiale comporta costi computazionali operativi sostenuti "
+        "direttamente dallo sviluppatore.\n\n"
+        "⚠️ *Servizio Sperimentale, Limiti & Possibili Malfunzionamenti:*\n"
+        f"• L'Assistente AI *non è stato testato con molti utenti*, è soggetto a limiti fair-use (*{max_req} {req_word} ogni {win_label}*) "
+        "e *potrebbe occasionalmente non funzionare* o avere errori/indisponibilità.\n\n"
+        "🚫 *Politica di Non Rimborsabilità (Donazione):*\n"
+        "• L'importo pagato *non è rimborsabile*, poiché copre i costi operativi dei modelli AI ed è in ogni caso "
+        "considerato una *donazione* a supporto dello sviluppo e mantenimento del progetto.\n\n"
         f"• *Costo:* {price_display} ogni {sub_days} giorni.\n"
         f"• *Durata:* Il mese è calcolato in {sub_days} giorni solari effettivi dalla data di pagamento.\n"
         f"• *Prova Gratuita:* 1 sola volta per utente ({trial_days} giorni).\n"
@@ -211,8 +222,25 @@ async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     payload = query.invoice_payload or ""
-    if not payload.startswith("ai_sub:"):
+    parts = payload.split(":")
+    if len(parts) != 3 or parts[0] != "ai_sub" or not parts[1] or not parts[2]:
         await query.answer(ok=False, error_message="Ordine non valido o scaduto.")
+        return
+
+    from_user = getattr(query, "from_user", None)
+    from_user_id = getattr(from_user, "id", None) if from_user else None
+    if isinstance(from_user_id, int) and not isinstance(from_user_id, bool):
+        if users_repo.is_user_banned(from_user_id):
+            await query.answer(ok=False, error_message="⛔ Accesso al bot revocato.")
+            return
+        if str(from_user_id) != parts[1]:
+            logger.warning("PreCheckout payload user mismatch: from_user=%s payload=%s", from_user_id, payload)
+            await query.answer(ok=False, error_message="Ordine non valido per questo utente.")
+            return
+
+    currency = getattr(query, "currency", None)
+    if isinstance(currency, str) and currency != "XTR":
+        await query.answer(ok=False, error_message="Valuta non supportata.")
         return
 
     # Everything verified, approve transaction
@@ -230,6 +258,25 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
         return
 
     chat_id = chat.id
+    sp = msg.successful_payment
+    payload = getattr(sp, "invoice_payload", None)
+    if isinstance(payload, str) and not payload.startswith(f"ai_sub:{chat_id}:"):
+        logger.warning("SuccessfulPayment payload mismatch for chat_id %s: %s", chat_id, payload)
+        await msg.reply_text(
+            "⚠️ Pagamento non riconosciuto per questa chat. Contatta l'amministratore.",
+            reply_markup=main_menu_keyboard(is_admin_user=is_admin(chat_id)),
+        )
+        return
+
+    sp_currency = getattr(sp, "currency", None)
+    if isinstance(sp_currency, str) and sp_currency != "XTR":
+        logger.warning("SuccessfulPayment unsupported currency for chat_id %s: %s", chat_id, sp_currency)
+        await msg.reply_text(
+            "⚠️ Valuta di pagamento non supportata.",
+            reply_markup=main_menu_keyboard(is_admin_user=is_admin(chat_id)),
+        )
+        return
+
     sub_days = settings_repo.get_sub_days()
     ok, new_expires_at = users_repo.extend_ai_subscription(chat_id, days=sub_days)
 
@@ -272,6 +319,18 @@ async def abbonamento_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
+    max_req = settings_repo.get_ai_rate_limit_requests()
+    win_min = settings_repo.get_ai_rate_limit_window_minutes()
+    req_word = "richiesta" if max_req == 1 else "richieste"
+    win_label = "1 minuto" if win_min == 1 else f"{win_min} minuti"
+    disclaimer = (
+        "⚠️ *Funzione opzionale & sperimentale:*\n"
+        "• L'Assistente AI è *opzionale* (tutte le altre funzioni — orari, fermate, notizie, PDF — restano *100% gratuite e open source*).\n"
+        f"• Il servizio *non è stato testato con molti utenti*, ha limiti fair-use (*{max_req} {req_word} ogni {win_label}*) "
+        "e *potrebbe occasionalmente non funzionare*.\n"
+        "• L'importo versato *non è rimborsabile*, poiché copre i costi operativi dei modelli AI ed è considerato una *donazione* a supporto del progetto."
+    )
+
     if status.get("ai_allowed") and status.get("ai_expires_at"):
         days_rem = status.get("days_remaining", 0)
         exp_str = status.get("ai_expires_at")
@@ -280,17 +339,14 @@ async def abbonamento_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"📅 *Scadenza:* `{exp_str}`\n"
             f"⏳ *Giorni rimanenti:* `{days_rem}`\n\n"
             f"Puoi estendere l'abbonamento di ulteriori {sub_days} giorni a {price_display}.\n\n"
-            "Grazie per il tuo supporto! Il tuo contributo copre i costi operativi dei modelli AI e sostiene il progetto open source CircumOrari."
+            f"{disclaimer}"
         )
     else:
         text = (
             "🤖 *Abbonamento Assistente AI CircumOrari*\n\n"
             f"Attiva l'accesso per {sub_days} giorni a soli *{price_display}*.\n"
             "Nessun vincolo, nessun rinnovo automatico.\n\n"
-            "💡 *Sostieni il Progetto:*\n"
-            "Mentre orari, fermate vicine, avvisi e tabelle PDF sono completamente gratuiti e open source, "
-            "l'Assistente AI comporta costi computazionali diretti. Il pagamento copre le spese dei modelli "
-            "e funge da donazione a supporto del bot."
+            f"{disclaimer}"
         )
 
     can_trial = not status.get("trial_used") and settings_repo.is_trial_enabled()

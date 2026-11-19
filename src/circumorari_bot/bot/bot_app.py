@@ -5,6 +5,7 @@ from telegram import Bot, BotCommand, Update
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    ApplicationHandlerStop,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
@@ -14,6 +15,7 @@ from telegram.ext import (
     filters,
 )
 from circumorari_bot.config import settings
+from circumorari_bot.data.settings_repo import SettingsRepository
 from circumorari_bot.data.users_repo import UsersRepository
 from circumorari_bot.bot.handlers.start import (
     start_command,
@@ -65,12 +67,136 @@ from circumorari_bot.bot.handlers.admin import (
     sub_user_command,
     unsub_user_command,
     delete_user_command,
+    ban_user_command,
+    unban_user_command,
+    maintenance_command,
     list_ai_command,
     reset_commands_command,
 )
 
 logger = logging.getLogger(__name__)
 users_repo = UsersRepository()
+settings_repo = SettingsRepository()
+
+
+async def blacklist_guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global pre-processor halting all updates from banned users/chats before any handler runs."""
+    if getattr(update, "channel_post", None):
+        return
+
+    candidate_ids: list[int | str] = []
+    user = getattr(update, "effective_user", None)
+    chat = getattr(update, "effective_chat", None)
+    if user and getattr(user, "id", None) is not None:
+        candidate_ids.append(user.id)
+    if chat and getattr(chat, "type", None) == "private" and getattr(chat, "id", None) is not None:
+        if chat.id not in candidate_ids:
+            candidate_ids.append(chat.id)
+
+    if not candidate_ids:
+        return
+
+    admin_ids = settings.admin_user_ids
+    for cid in candidate_ids:
+        try:
+            if int(cid) in admin_ids:
+                return
+        except (ValueError, TypeError):
+            pass
+
+    for cid in candidate_ids:
+        if users_repo.is_user_banned(cid):
+            logger.info("Blocked update from banned user/chat %s", cid)
+            if getattr(update, "pre_checkout_query", None):
+                try:
+                    await update.pre_checkout_query.answer(
+                        ok=False,
+                        error_message="⛔ Accesso al bot revocato.",
+                    )
+                except Exception as exc:
+                    logger.debug("Could not reject pre_checkout_query for banned user %s: %s", cid, exc)
+            elif getattr(update, "callback_query", None):
+                try:
+                    await update.callback_query.answer(
+                        "⛔ Il tuo account è stato bloccato e non può utilizzare questo bot.",
+                        show_alert=True,
+                    )
+                except Exception as exc:
+                    logger.debug("Could not answer callback_query for banned user %s: %s", cid, exc)
+            elif (
+                getattr(update, "effective_message", None)
+                and chat
+                and getattr(chat, "type", None) == "private"
+            ):
+                try:
+                    await update.effective_message.reply_text(
+                        "⛔ Il tuo account è stato bloccato e non può utilizzare questo bot."
+                    )
+                except Exception as exc:
+                    logger.debug("Could not send ban notice to user %s: %s", cid, exc)
+            raise ApplicationHandlerStop
+
+
+async def maintenance_guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Block non-admin updates during maintenance mode and record waitlist for back-online alerts."""
+    if getattr(update, "channel_post", None):
+        return
+    if not settings_repo.is_maintenance_mode():
+        return
+
+    candidate_ids: list[int | str] = []
+    user = getattr(update, "effective_user", None)
+    chat = getattr(update, "effective_chat", None)
+    if user and getattr(user, "id", None) is not None:
+        candidate_ids.append(user.id)
+    is_private = bool(chat and getattr(chat, "type", None) == "private")
+    if is_private and getattr(chat, "id", None) is not None and chat.id not in candidate_ids:
+        candidate_ids.append(chat.id)
+
+    admin_ids = settings.admin_user_ids
+    for cid in candidate_ids:
+        try:
+            if int(cid) in admin_ids:
+                return
+        except (ValueError, TypeError):
+            pass
+
+    pre_checkout = getattr(update, "pre_checkout_query", None)
+    if not is_private and not pre_checkout:
+        return
+
+    target_id = chat.id if is_private else (getattr(user, "id", None) if user else None)
+    if target_id is not None:
+        settings_repo.add_maintenance_waitlist_user(target_id)
+
+    if pre_checkout:
+        try:
+            await pre_checkout.answer(
+                ok=False,
+                error_message="🛠 Il bot è temporaneamente in manutenzione. Riprova più tardi.",
+            )
+        except Exception as exc:
+            logger.debug("Could not reject pre_checkout_query in maintenance for %s: %s", target_id, exc)
+    elif getattr(update, "callback_query", None):
+        try:
+            await update.callback_query.answer(
+                "🛠 Il bot è temporaneamente in manutenzione. Riprova più tardi!",
+                show_alert=True,
+            )
+        except Exception as exc:
+            logger.debug("Could not answer callback_query in maintenance for %s: %s", target_id, exc)
+    elif getattr(update, "effective_message", None) and is_private:
+        try:
+            await update.effective_message.reply_text(
+                "🛠 *Bot in Manutenzione*\n\n"
+                "CircumOrari Bot è temporaneamente in manutenzione per aggiornamenti e miglioramenti.\n"
+                "Ti avviseremo o potrai riprovare non appena il servizio tornerà online!",
+                parse_mode="Markdown",
+            )
+        except Exception as exc:
+            logger.debug("Could not send maintenance reply to %s: %s", target_id, exc)
+
+    raise ApplicationHandlerStop
 
 
 async def track_user_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -156,6 +282,12 @@ def create_bot_application() -> Application:
     app = builder.build()
     app.add_error_handler(error_handler)
 
+    # Global blacklist guard (group -3): halt all updates from banned users first (never waitlisted)
+    app.add_handler(TypeHandler(Update, blacklist_guard), group=-3)
+
+    # Global maintenance guard (group -2): halt non-admin updates during maintenance & save waitlist
+    app.add_handler(TypeHandler(Update, maintenance_guard), group=-2)
+
     # Pre-processor (group -1): automatically save/update private user with is_subscribed=0, ai_allowed=0
     app.add_handler(TypeHandler(Update, track_user_interaction), group=-1)
 
@@ -191,6 +323,9 @@ def create_bot_application() -> Application:
     app.add_handler(CommandHandler("unsub_user", unsub_user_command, filters=private_chat))
     app.add_handler(CommandHandler("delete_user", delete_user_command, filters=private_chat))
     app.add_handler(CommandHandler("del_user", delete_user_command, filters=private_chat))
+    app.add_handler(CommandHandler("ban", ban_user_command, filters=private_chat))
+    app.add_handler(CommandHandler("unban", unban_user_command, filters=private_chat))
+    app.add_handler(CommandHandler("manutenzione", maintenance_command, filters=private_chat))
     app.add_handler(CommandHandler("list_ai", list_ai_command, filters=private_chat))
     app.add_handler(CommandHandler(["reset_commands", "reflush_commands"], reset_commands_command, filters=private_chat))
 

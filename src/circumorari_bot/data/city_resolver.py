@@ -14,6 +14,14 @@ _MUNICIPALITIES_PATH = Path(__file__).resolve().parent / "etna_municipalities.js
 _MUNICIPALITIES_CACHE: Optional[List[dict]] = None
 _REVERSE_GEOCODE_CACHE: Dict[Tuple[float, float], str] = {}
 _FORWARD_GEOCODE_CACHE: Dict[str, Optional[Tuple[float, float, str]]] = {}
+_MAX_GEOCODE_CACHE_SIZE = 1024
+
+
+def _set_bounded_cache(cache: dict, key, value) -> None:
+    """Insert into cache while bounding max entries to _MAX_GEOCODE_CACHE_SIZE."""
+    if key not in cache and len(cache) >= _MAX_GEOCODE_CACHE_SIZE:
+        cache.pop(next(iter(cache)))
+    cache[key] = value
 
 # Known municipality aliases for name-based fallback when coordinates are missing
 KNOWN_CITY_ALIASES: List[Tuple[str, str]] = [
@@ -218,7 +226,7 @@ def resolve_city_by_coords(lat: float, lon: float, allow_network: bool = False) 
                     or addr.get("municipality")
                     or ""
                 )
-                _REVERSE_GEOCODE_CACHE[cell] = city
+                _set_bounded_cache(_REVERSE_GEOCODE_CACHE, cell, city)
                 return city
         except Exception as exc:
             logger.debug("Nominatim reverse geocode fallback failed for (%s, %s): %s", lat, lon, exc)
@@ -338,10 +346,10 @@ def geocode_place_in_etna_area(
                         city = resolve_city_by_coords(lat, lon, allow_network=False)
                         label = f"{disp} ({city})" if city and city.lower() not in disp.lower() else disp
                         result = (lat, lon, label)
-                        _FORWARD_GEOCODE_CACHE[clean_key_stripped] = result
+                        _set_bounded_cache(_FORWARD_GEOCODE_CACHE, clean_key_stripped, result)
                         return result
         except Exception as exc:
             logger.debug("Nominatim forward geocode failed for '%s': %s", q_str, exc)
 
-    _FORWARD_GEOCODE_CACHE[clean_key_stripped] = None
+    _set_bounded_cache(_FORWARD_GEOCODE_CACHE, clean_key_stripped, None)
     return None

@@ -123,11 +123,15 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     AI_RATE_LIMIT_PER_MINUTE: int = Field(
         default=3,
-        description="Maximum AI requests per user per minute (sliding window)"
+        description="Maximum AI requests per user per sliding window (default 3 requests)"
+    )
+    AI_RATE_LIMIT_WINDOW_MINUTES: int = Field(
+        default=10,
+        description="Rate limit sliding window duration in minutes"
     )
     AI_RATE_LIMIT_WINDOW_SECONDS: int = Field(
-        default=60,
-        description="Rate limit sliding window duration in seconds"
+        default=600,
+        description="Rate limit sliding window duration in seconds (default 10 minutes)"
     )
 
     # AI Subscription & Payments Configuration

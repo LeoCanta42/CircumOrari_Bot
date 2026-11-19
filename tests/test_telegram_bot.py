@@ -337,8 +337,11 @@ async def test_ai_permission_flow_and_admin_commands():
     from circumorari_bot.bot.handlers.admin import allow_ai_command, disallow_ai_command, list_ai_command
     from circumorari_bot.config import settings
 
+    from circumorari_bot.core.rate_limiter import ai_rate_limiter
+
     repo = UsersRepository()
     test_user_id = 777666555
+    ai_rate_limiter.reset(test_user_id)
     repo.delete_user(test_user_id)
 
     # Initially unauthorized
@@ -415,6 +418,7 @@ async def test_ai_permission_flow_and_admin_commands():
     finally:
         settings.ADMIN_USER_IDS_RAW = original_admins
         repo.delete_user(test_user_id)
+        ai_rate_limiter.reset(test_user_id)
 
 
 @pytest.mark.anyio
@@ -702,77 +706,117 @@ async def test_wizard_city_filter_and_inline_text_search():
 
 @pytest.mark.anyio
 async def test_ai_message_handler_rate_limiting(monkeypatch):
-    """Verify sliding-window rate limiting on AI messages: blocks 4th request and permits admin bypass."""
+    """Verify dynamic sliding-window fair-use rate limiting, parallel immediate tracking reply, and admin bypass."""
+    import threading
     from circumorari_bot.data.users_repo import UsersRepository
+    from circumorari_bot.data.settings_repo import SettingsRepository
     from circumorari_bot.bot.handlers.ai_chat import ai_message_handler
     from circumorari_bot.core.rate_limiter import ai_rate_limiter
     from circumorari_bot.config import settings
     from circumorari_bot.core.models import AIQueryResponse
 
+    tracking_sent_event = threading.Event()
+
+    def slow_mock_answer_query(text):
+        # Prove parallelism: wait until tracking reply was dispatched before returning AI response
+        assert tracking_sent_event.wait(timeout=2.0), "Tracking status message was not sent in parallel before AI finished!"
+        return AIQueryResponse(answer=f"Risposta mock per: {text}")
+
     monkeypatch.setattr(
         "circumorari_bot.bot.handlers.ai_chat.ai_service.answer_query",
-        lambda text: AIQueryResponse(answer=f"Risposta mock per: {text}")
+        slow_mock_answer_query,
     )
 
     repo = UsersRepository()
+    settings_repo = SettingsRepository()
+    settings_repo.delete("ai_rate_limit_requests")
+    settings_repo.delete("ai_rate_limit_window_minutes")
+
     test_user_id = 888777666
     ai_rate_limiter.reset(test_user_id)
     repo.delete_user(test_user_id)
     repo.set_ai_allowed(test_user_id, True)  # Authorize AI access
 
-    try:
-        # 1. First 3 messages should be processed normally
-        for i in range(3):
-            upd = MagicMock(spec=Update)
-            upd.channel_post = None
-            chat = MagicMock()
-            chat.type = "private"
-            chat.id = test_user_id
-            upd.effective_chat = chat
-            user = MagicMock()
-            user.id = test_user_id
-            user.username = "test_rate_limited"
-            upd.effective_user = user
-            msg = MagicMock()
-            msg.text = f"Domanda numero {i+1} da Catania a Bronte"
-            msg.reply_text = AsyncMock()
-            upd.effective_message = msg
-            ctx = MagicMock()
-            ctx.bot.send_chat_action = AsyncMock()
-
-            await ai_message_handler(upd, ctx)
-            ctx.bot.send_chat_action.assert_awaited_once_with(chat_id=test_user_id, action="typing")
-            msg.reply_text.assert_awaited_once()
-            reply_text = msg.reply_text.call_args[0][0]
-            assert "Limite di richieste raggiunto" not in reply_text
-
-        # 2. 4th message should be immediately blocked by rate limiter
-        upd_blocked = MagicMock(spec=Update)
-        upd_blocked.channel_post = None
+    def _make_text_update(uid: int, text: str, username: str = "test_rate_limited"):
+        upd = MagicMock(spec=Update)
+        upd.channel_post = None
         chat = MagicMock()
         chat.type = "private"
-        chat.id = test_user_id
-        upd_blocked.effective_chat = chat
+        chat.id = uid
+        upd.effective_chat = chat
         user = MagicMock()
-        user.id = test_user_id
-        upd_blocked.effective_user = user
-        msg_blocked = MagicMock()
-        msg_blocked.text = "Quarta domanda consecutiva"
-        msg_blocked.reply_text = AsyncMock()
-        upd_blocked.effective_message = msg_blocked
-        ctx_blocked = MagicMock()
-        ctx_blocked.bot.send_chat_action = AsyncMock()
+        user.id = uid
+        user.username = username
+        user.first_name = "Test"
+        upd.effective_user = user
+        msg = MagicMock()
+        msg.text = text
 
+        async def _reply_side_effect(txt, **kwargs):
+            if "Elaborazione risposta AI in corso" in txt:
+                tracking_sent_event.set()
+
+        msg.reply_text = AsyncMock(side_effect=_reply_side_effect)
+        upd.effective_message = msg
+        ctx = MagicMock()
+        ctx.user_data = {}
+        ctx.bot.send_chat_action = AsyncMock()
+        return upd, msg, ctx
+
+    try:
+        # 1. Default 3 requests / 10 minutes: each request gets 2 replies (tracking first, AI answer second)
+        for i in range(3):
+            tracking_sent_event.clear()
+            upd, msg, ctx = _make_text_update(test_user_id, f"Domanda numero {i+1} da Catania a Bronte")
+            await ai_message_handler(upd, ctx)
+
+            ctx.bot.send_chat_action.assert_awaited_once_with(chat_id=test_user_id, action="typing")
+            assert msg.reply_text.await_count == 2
+            tracking_text = msg.reply_text.call_args_list[0][0][0]
+            answer_text = msg.reply_text.call_args_list[1][0][0]
+            assert "Elaborazione risposta AI in corso" in tracking_text
+            assert f"{i+1}/3" in tracking_text
+            assert "10 minuti" in tracking_text
+            assert f"Risposta mock per: Domanda numero {i+1}" in answer_text
+
+        # 2. 4th message is immediately blocked by rate limiter
+        upd_blocked, msg_blocked, ctx_blocked = _make_text_update(test_user_id, "Quarta domanda consecutiva")
         await ai_message_handler(upd_blocked, ctx_blocked)
-        # Should NOT trigger typing action
         ctx_blocked.bot.send_chat_action.assert_not_called()
         msg_blocked.reply_text.assert_awaited_once()
         blocked_text = msg_blocked.reply_text.call_args[0][0]
         assert "Limite di richieste raggiunto" in blocked_text
-        assert "3 richieste al minuto" in blocked_text
-        assert "secondi" in blocked_text
+        assert "3 richieste ogni 10 minuti" in blocked_text
+        assert "3/3" in blocked_text
 
-        # 3. Admin user bypasses rate limit
+        # 3. Dynamic custom admin-configured limit: 2 requests / 5 minutes
+        settings_repo.set_ai_rate_limit_requests(2)
+        settings_repo.set_ai_rate_limit_window_minutes(5)
+        ai_rate_limiter.reset(test_user_id)
+
+        for i in range(2):
+            tracking_sent_event.clear()
+            upd, msg, ctx = _make_text_update(test_user_id, f"Domanda custom {i+1}")
+            await ai_message_handler(upd, ctx)
+            assert msg.reply_text.await_count == 2
+            tracking_text = msg.reply_text.call_args_list[0][0][0]
+            assert f"{i+1}/2" in tracking_text
+            assert "5 minuti" in tracking_text
+
+        upd_cblock, msg_cblock, ctx_cblock = _make_text_update(test_user_id, "Terza domanda custom")
+        await ai_message_handler(upd_cblock, ctx_cblock)
+        ctx_cblock.bot.send_chat_action.assert_not_called()
+        msg_cblock.reply_text.assert_awaited_once()
+        cblock_text = msg_cblock.reply_text.call_args[0][0]
+        assert "Limite di richieste raggiunto" in cblock_text
+        assert "2 richieste ogni 5 minuti" in cblock_text
+        assert "2/2" in cblock_text
+
+        # 4. Admin user bypasses rate limit (even with slow answer_query returning immediately)
+        monkeypatch.setattr(
+            "circumorari_bot.bot.handlers.ai_chat.ai_service.answer_query",
+            lambda text: AIQueryResponse(answer=f"Risposta admin: {text}"),
+        )
         admin_id = 999111222
         ai_rate_limiter.reset(admin_id)
         repo.delete_user(admin_id)
@@ -782,31 +826,19 @@ async def test_ai_message_handler_rate_limiting(monkeypatch):
         settings.ADMIN_USER_IDS_RAW = str(admin_id)
         try:
             for j in range(4):
-                upd_adm = MagicMock(spec=Update)
-                upd_adm.channel_post = None
-                c_adm = MagicMock()
-                c_adm.type = "private"
-                c_adm.id = admin_id
-                upd_adm.effective_chat = c_adm
-                u_adm = MagicMock()
-                u_adm.id = admin_id
-                upd_adm.effective_user = u_adm
-                m_adm = MagicMock()
-                m_adm.text = f"Admin query {j+1}"
-                m_adm.reply_text = AsyncMock()
-                upd_adm.effective_message = m_adm
-                ctx_adm = MagicMock()
-                ctx_adm.bot.send_chat_action = AsyncMock()
-
+                upd_adm, m_adm, ctx_adm = _make_text_update(admin_id, f"Admin query {j+1}", username="admin_rl")
                 await ai_message_handler(upd_adm, ctx_adm)
                 ctx_adm.bot.send_chat_action.assert_awaited_once()
                 m_adm.reply_text.assert_awaited_once()
+                assert "Risposta admin:" in m_adm.reply_text.call_args[0][0]
                 assert "Limite di richieste raggiunto" not in m_adm.reply_text.call_args[0][0]
         finally:
             settings.ADMIN_USER_IDS_RAW = orig_admins
             repo.delete_user(admin_id)
             ai_rate_limiter.reset(admin_id)
     finally:
+        settings_repo.delete("ai_rate_limit_requests")
+        settings_repo.delete("ai_rate_limit_window_minutes")
         repo.delete_user(test_user_id)
         ai_rate_limiter.reset(test_user_id)
 
@@ -1070,85 +1102,1016 @@ def test_format_nearest_stops_message_departures():
 
 @pytest.mark.anyio
 async def test_ai_cost_and_donation_descriptions():
-    """Verify AI model cost justification and open-source donation explanations across help and payment views."""
-    from circumorari_bot.bot.handlers.start import HELP_TEXT
+    """Verify AI optionality, experimental untested status, fair-use limits, no-refund, and donation disclaimers."""
+    from telegram import InlineKeyboardMarkup
+    from circumorari_bot.bot.handlers.start import HELP_TEXT, PRIVACY_TEXT
     from circumorari_bot.bot.handlers.payments import (
         send_subscription_invoice,
         ai_sub_info_callback,
         abbonamento_command,
     )
     from circumorari_bot.bot.handlers.ai_chat import ai_help_callback
+    from circumorari_bot.data.settings_repo import SettingsRepository
     from circumorari_bot.data.users_repo import UsersRepository
 
-    # 1. HELP_TEXT checks
+    def _assert_full_disclaimer(text: str, check_gratuit: bool = True):
+        low = text.lower()
+        assert "opzionale" in low
+        assert "non è stato testato" in low or "non è stata testata" in low or "non testat" in low
+        assert "limiti" in low
+        assert "non funzionare" in low
+        assert "rimbors" in low
+        assert "donazione" in low
+        assert "costi" in low
+        if check_gratuit:
+            assert "gratuit" in low
+
+    # 1. HELP_TEXT & PRIVACY_TEXT checks
     assert "costi operativi" in HELP_TEXT or "costi vivi" in HELP_TEXT
     assert "donazione" in HELP_TEXT
     assert "open-source" in HELP_TEXT
     assert "gratuite" in HELP_TEXT
+    _assert_full_disclaimer(HELP_TEXT)
+    assert "rimbors" in PRIVACY_TEXT.lower()
+    assert "donazione" in PRIVACY_TEXT.lower()
 
-    # 2. send_subscription_invoice invoice description
-    upd_inv = MagicMock(spec=Update)
-    chat = MagicMock()
-    chat.id = 99887711
-    upd_inv.effective_chat = chat
-    ctx_inv = MagicMock()
-    ctx_inv.bot.send_invoice = AsyncMock()
-
-    await send_subscription_invoice(upd_inv, ctx_inv)
-    inv_desc = ctx_inv.bot.send_invoice.call_args[1]["description"]
-    assert "costi" in inv_desc.lower()
-    assert "donazione" in inv_desc.lower()
-    assert "gratuit" in inv_desc.lower()
-
-    # 3. ai_sub_info_callback message text
-    upd_info = MagicMock(spec=Update)
-    upd_info.effective_chat = chat
-    q_info = MagicMock()
-    q_info.answer = AsyncMock()
-    q_info.edit_message_text = AsyncMock()
-    upd_info.callback_query = q_info
-    ctx_info = MagicMock()
-
-    await ai_sub_info_callback(upd_info, ctx_info)
-    info_text = q_info.edit_message_text.call_args[0][0]
-    assert "donazione" in info_text.lower()
-    assert "costi" in info_text.lower()
-    assert "gratuite" in info_text.lower()
-
-    # 4. abbonamento_command prompt text
-    upd_abb = MagicMock(spec=Update)
-    upd_abb.effective_chat = chat
-    msg_abb = MagicMock()
-    msg_abb.reply_text = AsyncMock()
-    upd_abb.effective_message = msg_abb
-    ctx_abb = MagicMock()
-
-    await abbonamento_command(upd_abb, ctx_abb)
-    abb_text = msg_abb.reply_text.call_args[0][0]
-    assert "donazione" in abb_text.lower()
-    assert "costi" in abb_text.lower()
-
-    # 5. ai_help_callback restricted message for unsubscribed user
     repo = UsersRepository()
-    test_user_id = 99887722
-    repo.delete_user(test_user_id)
-    upd_ai = MagicMock(spec=Update)
-    chat_ai = MagicMock()
-    chat_ai.id = test_user_id
-    upd_ai.effective_chat = chat_ai
-    user_ai = MagicMock()
-    user_ai.id = test_user_id
-    upd_ai.effective_user = user_ai
-    q_ai = MagicMock()
-    q_ai.answer = AsyncMock()
-    q_ai.edit_message_text = AsyncMock()
-    upd_ai.callback_query = q_ai
-    ctx_ai = MagicMock()
+    settings_repo = SettingsRepository()
+    unsub_uid = 99887711
+    ai_uid = 99887722
+    repo.delete_user(unsub_uid)
+    repo.delete_user(ai_uid)
+    settings_repo.delete("ai_rate_limit_requests")
+    settings_repo.delete("ai_rate_limit_window_minutes")
 
-    await ai_help_callback(upd_ai, ctx_ai)
-    ai_help_text = q_ai.edit_message_text.call_args[0][0]
-    assert "donazione" in ai_help_text.lower()
-    assert "costi" in ai_help_text.lower()
+    try:
+        # 2. send_subscription_invoice description (including length <= 255 even for large values)
+        upd_inv = MagicMock(spec=Update)
+        chat = MagicMock()
+        chat.id = unsub_uid
+        upd_inv.effective_chat = chat
+        ctx_inv = MagicMock()
+        ctx_inv.bot.send_invoice = AsyncMock()
+
+        await send_subscription_invoice(upd_inv, ctx_inv)
+        inv_desc = ctx_inv.bot.send_invoice.call_args[1]["description"]
+        assert len(inv_desc) <= 255
+        _assert_full_disclaimer(inv_desc)
+
+        settings_repo.set_sub_days(365)
+        settings_repo.set_sub_stars(9999)
+        ctx_inv.bot.send_invoice.reset_mock()
+        await send_subscription_invoice(upd_inv, ctx_inv)
+        inv_desc_big = ctx_inv.bot.send_invoice.call_args[1]["description"]
+        assert len(inv_desc_big) <= 255
+        settings_repo.set_sub_days(30)
+        settings_repo.set_sub_stars(50)
+
+        # 3. ai_sub_info_callback message text
+        upd_info = MagicMock(spec=Update)
+        upd_info.effective_chat = chat
+        q_info = MagicMock()
+        q_info.answer = AsyncMock()
+        q_info.edit_message_text = AsyncMock()
+        upd_info.callback_query = q_info
+        ctx_info = MagicMock()
+
+        await ai_sub_info_callback(upd_info, ctx_info)
+        info_text = q_info.edit_message_text.call_args[0][0]
+        _assert_full_disclaimer(info_text)
+        assert "3 richieste ogni 10 minuti" in info_text
+
+        # 4. abbonamento_command (both non-subscribed AND active-subscription branches)
+        upd_abb = MagicMock(spec=Update)
+        upd_abb.effective_chat = chat
+        msg_abb = MagicMock()
+        msg_abb.reply_text = AsyncMock()
+        upd_abb.effective_message = msg_abb
+        ctx_abb = MagicMock()
+
+        await abbonamento_command(upd_abb, ctx_abb)
+        abb_text = msg_abb.reply_text.call_args[0][0]
+        _assert_full_disclaimer(abb_text)
+
+        repo.extend_ai_subscription(unsub_uid, days=30)
+        msg_abb.reply_text.reset_mock()
+        await abbonamento_command(upd_abb, ctx_abb)
+        abb_active_text = msg_abb.reply_text.call_args[0][0]
+        assert "Abbonamento AI è Attivo" in abb_active_text
+        _assert_full_disclaimer(abb_active_text)
+
+        # 5. ai_help_callback restricted view (unsubscribed) & authorized view (dynamic fair-use + InlineKeyboardMarkup)
+        upd_ai = MagicMock(spec=Update)
+        chat_ai = MagicMock()
+        chat_ai.id = ai_uid
+        upd_ai.effective_chat = chat_ai
+        user_ai = MagicMock()
+        user_ai.id = ai_uid
+        upd_ai.effective_user = user_ai
+        q_ai = MagicMock()
+        q_ai.answer = AsyncMock()
+        q_ai.edit_message_text = AsyncMock()
+        upd_ai.callback_query = q_ai
+        ctx_ai = MagicMock()
+
+        await ai_help_callback(upd_ai, ctx_ai)
+        ai_help_text = q_ai.edit_message_text.call_args[0][0]
+        _assert_full_disclaimer(ai_help_text)
+
+        # Authorized user view -> verifies InlineKeyboardMarkup import and dynamic fair-use text
+        repo.set_ai_allowed(ai_uid, True)
+        settings_repo.set_ai_rate_limit_requests(4)
+        settings_repo.set_ai_rate_limit_window_minutes(15)
+        q_ai.edit_message_text.reset_mock()
+        await ai_help_callback(upd_ai, ctx_ai)
+        auth_help_text = q_ai.edit_message_text.call_args[0][0]
+        auth_markup = q_ai.edit_message_text.call_args[1]["reply_markup"]
+        assert isinstance(auth_markup, InlineKeyboardMarkup)
+        assert "4 richieste ogni 15 minuti" in auth_help_text
+    finally:
+        settings_repo.set_sub_days(30)
+        settings_repo.set_sub_stars(50)
+        settings_repo.delete("ai_rate_limit_requests")
+        settings_repo.delete("ai_rate_limit_window_minutes")
+        repo.delete_user(unsub_uid)
+        repo.delete_user(ai_uid)
+
+
+def test_users_repository_ban_and_blacklist(monkeypatch):
+    """Verify UsersRepository ban/unban, ban reason storage, filtering, exclusions, and admin protection."""
+    from datetime import datetime, timedelta, timezone
+    from circumorari_bot.config import settings
+    from circumorari_bot.data.db import get_persistent_db
+
+    repo = UsersRepository()
+    uid1 = 910000101
+    uid2 = 910000102
+    admin_id = 910000999
+    orig_admins = settings.ADMIN_USER_IDS_RAW
+    repo.delete_user(uid1)
+    repo.delete_user(uid2)
+    repo.delete_user(admin_id)
+
+    try:
+        settings.ADMIN_USER_IDS_RAW = str(admin_id)
+
+        repo.register_or_update(uid1, username="banned_user1", first_name="Luigi")
+        repo.subscribe_user(uid1, username="banned_user1")
+        repo.set_ai_allowed(uid1, True)
+        assert str(uid1) in repo.get_subscribed_chat_ids()
+        assert repo.is_ai_allowed(uid1) is True
+
+        # Ban with reason (trims whitespace)
+        assert repo.ban_user(uid1, reason="  Abuso e spam ripetuto  ") is True
+        assert repo.is_user_banned(uid1) is True
+        info = repo.get_ban_info(uid1)
+        assert info is not None
+        assert info["is_banned"] is True
+        assert info["ban_reason"] == "Abuso e spam ripetuto"
+        assert info["banned_at"] is not None
+
+        # Banned user excluded from broadcasts and AI access
+        assert str(uid1) not in repo.get_subscribed_chat_ids()
+        assert repo.is_ai_allowed(uid1) is False
+        assert str(uid1) not in repo.get_ai_allowed_chat_ids()
+        assert str(uid1) in repo.get_banned_chat_ids()
+
+        # Filter mode "banned" returns banned user
+        banned_list = repo.get_all_users(filter_mode="banned", limit=50)
+        assert any(u["chat_id"] == str(uid1) and u["ban_reason"] == "Abuso e spam ripetuto" for u in banned_list)
+        assert repo.get_stats()["banned_users"] >= 1
+
+        # Ban without reason (whitespace-only -> None)
+        assert repo.ban_user(uid2, reason="   ") is True
+        assert repo.is_user_banned(uid2) is True
+        info2 = repo.get_ban_info(uid2)
+        assert info2 is not None and info2["ban_reason"] is None
+
+        # prune_inactive MUST preserve banned users even if old and unsubscribed/non-AI
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d %H:%M:%S")
+        with get_persistent_db() as conn:
+            conn.execute("UPDATE users SET last_active = ? WHERE chat_id = ?", (old_ts, str(uid2)))
+        repo.prune_inactive(days=60)
+        assert repo.get_user(uid2) is not None
+        assert repo.is_user_banned(uid2) is True
+
+        # Admin protection: banning an admin returns False and is_user_banned is False
+        assert repo.ban_user(admin_id, reason="should fail") is False
+        assert repo.is_user_banned(admin_id) is False
+        assert repo.get_ban_info(admin_id) is None
+
+        # Unban clears ban status, reason, and banned_at
+        assert repo.unban_user(uid1) is True
+        assert repo.is_user_banned(uid1) is False
+        assert repo.get_ban_info(uid1) is None
+        u1_after = repo.get_user(uid1)
+        assert u1_after["is_banned"] == 0
+        assert u1_after["ban_reason"] is None
+        assert u1_after["banned_at"] is None
+        # Existing subscription/AI restored after unban
+        assert str(uid1) in repo.get_subscribed_chat_ids()
+        assert repo.is_ai_allowed(uid1) is True
+    finally:
+        settings.ADMIN_USER_IDS_RAW = orig_admins
+        repo.delete_user(uid1)
+        repo.delete_user(uid2)
+        repo.delete_user(admin_id)
+
+
+@pytest.mark.anyio
+async def test_blacklist_guard_and_end_to_end_process_update(monkeypatch):
+    """Verify blacklist_guard blocks every update type via ApplicationHandlerStop while admins are immune."""
+    from unittest.mock import patch
+    from telegram.ext import ApplicationHandlerStop
+    from circumorari_bot.bot.bot_app import create_bot_application, blacklist_guard
+    from circumorari_bot.bot.handlers.payments import pre_checkout_handler
+    from circumorari_bot.config import settings
+
+    repo = UsersRepository()
+    banned_uid = 920000201
+    admin_uid = 920000998
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_admins = settings.ADMIN_USER_IDS_RAW
+    repo.delete_user(banned_uid)
+    repo.delete_user(admin_uid)
+
+    api_calls: list[tuple[str, dict]] = []
+
+    async def fake_do_post(self_bot, endpoint, data=None, **kwargs):
+        api_calls.append((endpoint, dict(data or {})))
+        if endpoint == "getMe":
+            return {"id": 123456, "is_bot": True, "first_name": "CircumOrari", "username": "circumorari_bot"}
+        if endpoint == "sendMessage":
+            return {"message_id": 1, "date": 1700000000, "chat": {"id": banned_uid, "type": "private"}, "text": (data or {}).get("text", "")}
+        return True
+
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:FAKE_TOKEN_FOR_TEST"
+        settings.ADMIN_USER_IDS_RAW = str(admin_uid)
+
+        repo.register_or_update(banned_uid, username="blocked_user", first_name="Banned")
+        repo.set_ai_allowed(banned_uid, True)
+        assert repo.ban_user(banned_uid, reason="Abuso") is True
+
+        app = create_bot_application()
+        with patch("telegram.Bot._do_post", new=fake_do_post):
+            await app.initialize()
+            try:
+                # 1. /start from banned user -> blocked, no welcome text
+                api_calls.clear()
+                u_start = Update.de_json({
+                    "update_id": 1,
+                    "message": {
+                        "message_id": 10,
+                        "date": 1700000000,
+                        "chat": {"id": banned_uid, "type": "private"},
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "text": "/start",
+                        "entities": [{"offset": 0, "length": 6, "type": "bot_command"}],
+                    },
+                }, app.bot)
+                await app.process_update(u_start)
+                sent = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent) == 1
+                assert "bloccato" in sent[0]["text"]
+                assert "Benvenuto" not in sent[0]["text"]
+
+                # 2. /viaggio from banned user -> blocked
+                api_calls.clear()
+                u_viaggio = Update.de_json({
+                    "update_id": 2,
+                    "message": {
+                        "message_id": 11,
+                        "date": 1700000001,
+                        "chat": {"id": banned_uid, "type": "private"},
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "text": "/viaggio Catania - Bronte",
+                        "entities": [{"offset": 0, "length": 8, "type": "bot_command"}],
+                    },
+                }, app.bot)
+                await app.process_update(u_viaggio)
+                sent = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent) == 1 and "bloccato" in sent[0]["text"]
+
+                # 3. callback_query from banned user -> answered with show_alert=True, no menu/wizard edit
+                api_calls.clear()
+                u_cb = Update.de_json({
+                    "update_id": 3,
+                    "callback_query": {
+                        "id": "cb_banned_1",
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "chat_instance": "ci_b",
+                        "data": "wizard_start",
+                        "message": {
+                            "message_id": 12,
+                            "date": 1700000002,
+                            "chat": {"id": banned_uid, "type": "private"},
+                            "text": "Menu",
+                        },
+                    },
+                }, app.bot)
+                await app.process_update(u_cb)
+                cb_answers = [d for ep, d in api_calls if ep == "answerCallbackQuery"]
+                assert len(cb_answers) == 1
+                assert cb_answers[0].get("show_alert") is True
+                assert "bloccato" in cb_answers[0].get("text", "")
+                assert not any(ep == "editMessageText" for ep, _ in api_calls)
+
+                # 4. location from banned user -> blocked
+                api_calls.clear()
+                u_loc = Update.de_json({
+                    "update_id": 4,
+                    "message": {
+                        "message_id": 13,
+                        "date": 1700000003,
+                        "chat": {"id": banned_uid, "type": "private"},
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "location": {"latitude": 37.505, "longitude": 15.087},
+                    },
+                }, app.bot)
+                await app.process_update(u_loc)
+                sent = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent) == 1 and "bloccato" in sent[0]["text"]
+
+                # 5. Free-text AI message from banned user -> blocked without calling AI or typing
+                api_calls.clear()
+                u_ai = Update.de_json({
+                    "update_id": 5,
+                    "message": {
+                        "message_id": 14,
+                        "date": 1700000004,
+                        "chat": {"id": banned_uid, "type": "private"},
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "text": "A che ora passa la metro?",
+                    },
+                }, app.bot)
+                await app.process_update(u_ai)
+                sent = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent) == 1 and "bloccato" in sent[0]["text"]
+                assert not any(ep == "sendChatAction" for ep, _ in api_calls)
+
+                # 6. pre_checkout_query from banned user -> rejected ok=False
+                api_calls.clear()
+                u_pcq = Update.de_json({
+                    "update_id": 6,
+                    "pre_checkout_query": {
+                        "id": "pcq_banned_1",
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "currency": "XTR",
+                        "total_amount": 50,
+                        "invoice_payload": f"ai_sub:{banned_uid}:1700000005",
+                    },
+                }, app.bot)
+                await app.process_update(u_pcq)
+                pcq_answers = [d for ep, d in api_calls if ep == "answerPreCheckoutQuery"]
+                assert len(pcq_answers) == 1
+                assert pcq_answers[0]["ok"] is False
+
+                # Defense-in-depth check directly on pre_checkout_handler
+                mock_pcq_upd = MagicMock(spec=Update)
+                mock_pcq = MagicMock()
+                mock_pcq.from_user = MagicMock(id=banned_uid)
+                mock_pcq.invoice_payload = f"ai_sub:{banned_uid}:123"
+                mock_pcq.answer = AsyncMock()
+                mock_pcq_upd.pre_checkout_query = mock_pcq
+                await pre_checkout_handler(mock_pcq_upd, MagicMock())
+                mock_pcq.answer.assert_awaited_once_with(ok=False, error_message="⛔ Accesso al bot revocato.")
+
+                # 7. After unbanning, /start succeeds normally!
+                assert repo.unban_user(banned_uid) is True
+                api_calls.clear()
+                u_start_after = Update.de_json({
+                    "update_id": 7,
+                    "message": {
+                        "message_id": 15,
+                        "date": 1700000006,
+                        "chat": {"id": banned_uid, "type": "private"},
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "text": "/start",
+                        "entities": [{"offset": 0, "length": 6, "type": "bot_command"}],
+                    },
+                }, app.bot)
+                await app.process_update(u_start_after)
+                sent = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent) == 1
+                assert "Benvenuto su CircumOrari Bot" in sent[0]["text"]
+
+                # 8. Admin is never blocked by blacklist_guard
+                api_calls.clear()
+                u_adm_start = Update.de_json({
+                    "update_id": 8,
+                    "message": {
+                        "message_id": 16,
+                        "date": 1700000007,
+                        "chat": {"id": admin_uid, "type": "private"},
+                        "from": {"id": admin_uid, "is_bot": False, "first_name": "Admin"},
+                        "text": "/start",
+                        "entities": [{"offset": 0, "length": 6, "type": "bot_command"}],
+                    },
+                }, app.bot)
+                await app.process_update(u_adm_start)
+                sent_adm = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent_adm) == 1
+                assert "Benvenuto su CircumOrari Bot" in sent_adm[0]["text"]
+
+                # 9. Direct blacklist_guard check: channel_post ignored, banned user raises ApplicationHandlerStop
+                ch_upd = MagicMock(spec=Update)
+                ch_upd.channel_post = MagicMock()
+                await blacklist_guard(ch_upd, MagicMock())  # should return cleanly
+
+                repo.ban_user(banned_uid, reason="Re-ban")
+                ban_upd = MagicMock(spec=Update)
+                ban_upd.channel_post = None
+                ban_upd.pre_checkout_query = None
+                ban_upd.callback_query = None
+                ban_upd.effective_user = MagicMock(id=banned_uid)
+                ban_upd.effective_chat = MagicMock(id=banned_uid, type="private")
+                ban_upd.effective_message = MagicMock()
+                ban_upd.effective_message.reply_text = AsyncMock()
+                with pytest.raises(ApplicationHandlerStop):
+                    await blacklist_guard(ban_upd, MagicMock())
+                ban_upd.effective_message.reply_text.assert_awaited_once()
+            finally:
+                await app.shutdown()
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.ADMIN_USER_IDS_RAW = orig_admins
+        repo.delete_user(banned_uid)
+        repo.delete_user(admin_uid)
+
+
+@pytest.mark.anyio
+async def test_admin_panel_ban_flow_and_slash_commands():
+    """Verify admin panel ban-with-reason, ban-now, banned filter tab, unban, admin protection, and /ban /unban commands."""
+    from circumorari_bot.bot.bot_app import PUBLIC_BOT_COMMANDS
+    from circumorari_bot.bot.handlers.admin import (
+        admin_callback,
+        handle_admin_text_input,
+        ban_user_command,
+        unban_user_command,
+    )
+    from circumorari_bot.config import settings
+
+    # Verify /ban and /unban are NOT exposed in PUBLIC_BOT_COMMANDS
+    pub_cmds = [c.command for c in PUBLIC_BOT_COMMANDS]
+    assert "ban" not in pub_cmds
+    assert "unban" not in pub_cmds
+
+    repo = UsersRepository()
+    target_id = 930000301
+    admin_id = 930000997
+    orig_admins = settings.ADMIN_USER_IDS_RAW
+    repo.delete_user(target_id)
+    repo.delete_user(admin_id)
+
+    try:
+        settings.ADMIN_USER_IDS_RAW = str(admin_id)
+        repo.register_or_update(target_id, username="ban_target_user", first_name="Giulio")
+
+        ctx = MagicMock()
+        ctx.user_data = {}
+        ctx.bot = MagicMock()
+
+        admin_usr = MagicMock(id=admin_id, username="admin_boss", first_name="Admin")
+        admin_chat = MagicMock(id=admin_id, type="private")
+
+        cb_upd = MagicMock(spec=Update)
+        query = MagicMock(spec=CallbackQuery)
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+        cb_upd.callback_query = query
+        cb_upd.effective_user = admin_usr
+        cb_upd.effective_chat = admin_chat
+
+        # 1. Click "🚫 Banna Utente" -> prompts for reason and sets awaiting_ban_reason
+        query.data = f"adm_u_ban_ask:{target_id}:all:0"
+        await admin_callback(cb_upd, ctx)
+        assert ctx.user_data.get("admin_state") == "awaiting_ban_reason"
+        assert ctx.user_data.get("ban_target", {}).get("chat_id") == str(target_id)
+        assert "Scrivi ora in chat il motivo del ban" in query.edit_message_text.call_args[0][0]
+
+        # 2. Admin types ban reason -> user banned with saved reason and card shows reason
+        msg_reason = MagicMock()
+        msg_reason.text = "Invio continuo di richieste spam_test"
+        msg_reason.reply_text = AsyncMock()
+        upd_reason = MagicMock(spec=Update)
+        upd_reason.effective_user = admin_usr
+        upd_reason.effective_chat = admin_chat
+        upd_reason.effective_message = msg_reason
+
+        consumed = await handle_admin_text_input(upd_reason, ctx)
+        assert consumed is True
+        assert ctx.user_data.get("admin_state") is None
+        assert repo.is_user_banned(target_id) is True
+        assert repo.get_ban_info(target_id)["ban_reason"] == "Invio continuo di richieste spam_test"
+        card_after_ban = msg_reason.reply_text.call_args[0][0]
+        assert "BANNATO (In Blacklist)" in card_after_ban
+        assert "spam\\_test" in card_after_ban
+
+        # 3. View user card via adm_u_view shows ban status & saved reason
+        query.edit_message_text.reset_mock()
+        query.data = f"adm_u_view:{target_id}:all:0"
+        await admin_callback(cb_upd, ctx)
+        view_text = query.edit_message_text.call_args[0][0]
+        assert "BANNATO (In Blacklist)" in view_text
+        assert "spam\\_test" in view_text
+
+        # 4. Banned filter tab adm_users:banned:0 lists banned user with 🚫 badge
+        query.edit_message_text.reset_mock()
+        query.data = "adm_users:banned:0"
+        await admin_callback(cb_upd, ctx)
+        list_text = query.edit_message_text.call_args[0][0]
+        list_kb = query.edit_message_text.call_args[1]["reply_markup"]
+        list_btn_texts = [b.text for row in list_kb.inline_keyboard for b in row]
+        assert "Utenti bannati (Blacklist)" in list_text
+        assert any("🚫" in t and "ban_target_user" in t for t in list_btn_texts)
+
+        # 5. Unban via adm_u_unban clears ban status and reason
+        query.edit_message_text.reset_mock()
+        query.data = f"adm_u_unban:{target_id}:banned:0"
+        await admin_callback(cb_upd, ctx)
+        assert repo.is_user_banned(target_id) is False
+        assert repo.get_ban_info(target_id) is None
+        unban_card = query.edit_message_text.call_args[0][0]
+        assert "🟢 Attivo" in unban_card
+
+        # 6. Immediate ban without reason via adm_u_ban_now
+        query.edit_message_text.reset_mock()
+        query.data = f"adm_u_ban_now:{target_id}:all:0"
+        await admin_callback(cb_upd, ctx)
+        assert repo.is_user_banned(target_id) is True
+        assert repo.get_ban_info(target_id)["ban_reason"] is None
+        assert "(Nessun motivo specificato)" in query.edit_message_text.call_args[0][0]
+        repo.unban_user(target_id)
+
+        # 7. Admin self-ban protection via callback
+        query.answer.reset_mock()
+        query.data = f"adm_u_ban_ask:{admin_id}:all:0"
+        await admin_callback(cb_upd, ctx)
+        assert "Non puoi bannare un amministratore" in query.answer.call_args[0][0]
+        assert repo.is_user_banned(admin_id) is False
+
+        query.answer.reset_mock()
+        query.data = f"adm_u_ban_now:{admin_id}:all:0"
+        await admin_callback(cb_upd, ctx)
+        assert "Non puoi bannare un amministratore" in query.answer.call_args[0][0]
+
+        # 8. Slash commands /ban and /unban (non-admin rejected, admin works, admin self-ban rejected)
+        non_adm_upd = MagicMock(spec=Update)
+        non_adm_upd.effective_user = MagicMock(id=target_id)
+        non_adm_msg = MagicMock()
+        non_adm_msg.reply_text = AsyncMock()
+        non_adm_upd.effective_message = non_adm_msg
+        ctx.args = [str(target_id), "motivo"]
+        await ban_user_command(non_adm_upd, ctx)
+        non_adm_msg.reply_text.assert_awaited_once_with("⛔ Comando riservato agli amministratori.")
+
+        adm_cmd_upd = MagicMock(spec=Update)
+        adm_cmd_upd.effective_user = admin_usr
+        adm_cmd_msg = MagicMock()
+        adm_cmd_msg.reply_text = AsyncMock()
+        adm_cmd_upd.effective_message = adm_cmd_msg
+
+        ctx.args = ["@ban_target_user", "Violazione", "regole"]
+        await ban_user_command(adm_cmd_upd, ctx)
+        assert repo.is_user_banned(target_id) is True
+        assert repo.get_ban_info(target_id)["ban_reason"] == "Violazione regole"
+        assert "bannato e aggiunto alla blacklist" in adm_cmd_msg.reply_text.call_args[0][0]
+
+        # /ban admin rejected
+        adm_cmd_msg.reply_text.reset_mock()
+        ctx.args = [str(admin_id), "test"]
+        await ban_user_command(adm_cmd_upd, ctx)
+        assert "Non puoi bannare un amministratore" in adm_cmd_msg.reply_text.call_args[0][0]
+
+        # /unban works
+        adm_cmd_msg.reply_text.reset_mock()
+        ctx.args = ["@ban_target_user"]
+        await unban_user_command(adm_cmd_upd, ctx)
+        assert repo.is_user_banned(target_id) is False
+        assert "sbannato e rimosso dalla blacklist" in adm_cmd_msg.reply_text.call_args[0][0]
+    finally:
+        settings.ADMIN_USER_IDS_RAW = orig_admins
+        repo.delete_user(target_id)
+        repo.delete_user(admin_id)
+
+
+def test_settings_repository_maintenance_mode_and_waitlist():
+    """Verify maintenance mode toggle, waitlist persistence, banned exclusion, and GDPR deletion cleanup."""
+    from circumorari_bot.data.settings_repo import SettingsRepository
+
+    settings_repo = SettingsRepository()
+    users_repo = UsersRepository()
+    u_ok = 940000101
+    u_ban = 940000102
+    users_repo.delete_user(u_ok)
+    users_repo.delete_user(u_ban)
+    settings_repo.clear_maintenance_waitlist()
+    settings_repo.delete("maintenance_mode")
+
+    try:
+        assert settings_repo.is_maintenance_mode() is False
+        assert settings_repo.set_maintenance_mode(True) is True
+        assert settings_repo.is_maintenance_mode() is True
+
+        assert settings_repo.add_maintenance_waitlist_user(u_ok) is True
+        assert settings_repo.add_maintenance_waitlist_user(u_ban) is True
+        assert settings_repo.add_maintenance_waitlist_user("not_a_chat_id") is False
+        assert settings_repo.add_maintenance_waitlist_user(True) is False
+
+        # Banned user excluded from waitlist retrieval & count
+        users_repo.ban_user(u_ban, reason="Spam")
+        waiting = settings_repo.get_maintenance_waitlist_users()
+        assert str(u_ok) in waiting
+        assert str(u_ban) not in waiting
+        assert settings_repo.count_maintenance_waitlist_users() == 1
+
+        # GDPR deletion removes user from maintenance_waitlist too
+        users_repo.register_or_update(u_ok, username="waitlist_ok")
+        assert users_repo.delete_user(u_ok) is True
+        assert settings_repo.count_maintenance_waitlist_users() == 0
+
+        # Add again and clear_maintenance_waitlist
+        assert settings_repo.add_maintenance_waitlist_user(u_ok) is True
+        cleared = settings_repo.clear_maintenance_waitlist()
+        assert cleared >= 1
+        assert settings_repo.get_maintenance_waitlist_users() == []
+    finally:
+        settings_repo.delete("maintenance_mode")
+        settings_repo.clear_maintenance_waitlist()
+        users_repo.delete_user(u_ok)
+        users_repo.delete_user(u_ban)
+
+
+@pytest.mark.anyio
+async def test_maintenance_guard_and_admin_panel_flow():
+    """Verify maintenance_guard blocks non-admins (waitlisting them), blacklist runs before maintenance, admin bypasses, and back-online notifications work."""
+    from unittest.mock import patch
+    from circumorari_bot.bot.bot_app import create_bot_application, PUBLIC_BOT_COMMANDS
+    from circumorari_bot.bot.handlers.admin import admin_callback, maintenance_command
+    from circumorari_bot.data.settings_repo import SettingsRepository
+    from circumorari_bot.config import settings
+
+    assert "manutenzione" not in [c.command for c in PUBLIC_BOT_COMMANDS]
+
+    repo = UsersRepository()
+    settings_repo = SettingsRepository()
+    normal_uid = 950000101
+    banned_uid = 950000102
+    admin_uid = 950000999
+    orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_admins = settings.ADMIN_USER_IDS_RAW
+
+    repo.delete_user(normal_uid)
+    repo.delete_user(banned_uid)
+    repo.delete_user(admin_uid)
+    settings_repo.clear_maintenance_waitlist()
+    settings_repo.delete("maintenance_mode")
+
+    api_calls: list[tuple[str, dict]] = []
+
+    async def fake_do_post(self_bot, endpoint, data=None, **kwargs):
+        api_calls.append((endpoint, dict(data or {})))
+        if endpoint == "getMe":
+            return {"id": 123456, "is_bot": True, "first_name": "CircumOrari", "username": "circumorari_bot"}
+        if endpoint == "sendMessage":
+            return {"message_id": 1, "date": 1700000000, "chat": {"id": normal_uid, "type": "private"}, "text": (data or {}).get("text", "")}
+        return True
+
+    try:
+        settings.TELEGRAM_BOT_TOKEN = "123456:FAKE_TOKEN_FOR_TEST"
+        settings.ADMIN_USER_IDS_RAW = str(admin_uid)
+
+        repo.register_or_update(banned_uid, username="banned_during_maint")
+        repo.ban_user(banned_uid, reason="Abuso")
+        settings_repo.set_maintenance_mode(True)
+
+        app = create_bot_application()
+        with patch("telegram.Bot._do_post", new=fake_do_post):
+            await app.initialize()
+            try:
+                # 1. Non-admin /start -> blocked with maintenance notice & added to waitlist
+                api_calls.clear()
+                await app.process_update(Update.de_json({
+                    "update_id": 101,
+                    "message": {
+                        "message_id": 20,
+                        "date": 1700000000,
+                        "chat": {"id": normal_uid, "type": "private"},
+                        "from": {"id": normal_uid, "is_bot": False, "first_name": "Mario"},
+                        "text": "/start",
+                        "entities": [{"offset": 0, "length": 6, "type": "bot_command"}],
+                    },
+                }, app.bot))
+                sent = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent) == 1
+                assert "Bot in Manutenzione" in sent[0]["text"]
+                assert "Benvenuto" not in sent[0]["text"]
+                assert str(normal_uid) in settings_repo.get_maintenance_waitlist_users()
+
+                # 2. Non-admin callback_query -> blocked with alert
+                api_calls.clear()
+                await app.process_update(Update.de_json({
+                    "update_id": 102,
+                    "callback_query": {
+                        "id": "cb_maint_1",
+                        "from": {"id": normal_uid, "is_bot": False, "first_name": "Mario"},
+                        "chat_instance": "ci_m",
+                        "data": "wizard_start",
+                        "message": {
+                            "message_id": 21,
+                            "date": 1700000001,
+                            "chat": {"id": normal_uid, "type": "private"},
+                            "text": "Menu",
+                        },
+                    },
+                }, app.bot))
+                cb_answers = [d for ep, d in api_calls if ep == "answerCallbackQuery"]
+                assert len(cb_answers) == 1
+                assert cb_answers[0].get("show_alert") is True
+                assert "manutenzione" in cb_answers[0].get("text", "").lower()
+
+                # 3. Non-admin AI free-text -> blocked without typing
+                api_calls.clear()
+                await app.process_update(Update.de_json({
+                    "update_id": 103,
+                    "message": {
+                        "message_id": 22,
+                        "date": 1700000002,
+                        "chat": {"id": normal_uid, "type": "private"},
+                        "from": {"id": normal_uid, "is_bot": False, "first_name": "Mario"},
+                        "text": "A che ora passa il treno?",
+                    },
+                }, app.bot))
+                sent = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent) == 1 and "Bot in Manutenzione" in sent[0]["text"]
+                assert not any(ep == "sendChatAction" for ep, _ in api_calls)
+
+                # 4. Non-admin pre_checkout_query -> rejected with maintenance message
+                api_calls.clear()
+                await app.process_update(Update.de_json({
+                    "update_id": 104,
+                    "pre_checkout_query": {
+                        "id": "pcq_maint_1",
+                        "from": {"id": normal_uid, "is_bot": False, "first_name": "Mario"},
+                        "currency": "XTR",
+                        "total_amount": 50,
+                        "invoice_payload": f"ai_sub:{normal_uid}:1700000003",
+                    },
+                }, app.bot))
+                pcq_answers = [d for ep, d in api_calls if ep == "answerPreCheckoutQuery"]
+                assert len(pcq_answers) == 1
+                assert pcq_answers[0]["ok"] is False
+                assert "manutenzione" in pcq_answers[0]["error_message"].lower()
+
+                # 5. Banned user during maintenance -> blocked by blacklist_guard (group=-3) & NOT waitlisted!
+                api_calls.clear()
+                await app.process_update(Update.de_json({
+                    "update_id": 105,
+                    "message": {
+                        "message_id": 23,
+                        "date": 1700000004,
+                        "chat": {"id": banned_uid, "type": "private"},
+                        "from": {"id": banned_uid, "is_bot": False, "first_name": "Banned"},
+                        "text": "/start",
+                        "entities": [{"offset": 0, "length": 6, "type": "bot_command"}],
+                    },
+                }, app.bot))
+                sent_ban = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent_ban) == 1
+                assert "bloccato" in sent_ban[0]["text"]
+                assert settings_repo.get_maintenance_waitlist_users() == [str(normal_uid)]
+
+                # 6. Admin bypasses maintenance mode -> /admin works!
+                api_calls.clear()
+                await app.process_update(Update.de_json({
+                    "update_id": 106,
+                    "message": {
+                        "message_id": 24,
+                        "date": 1700000005,
+                        "chat": {"id": admin_uid, "type": "private"},
+                        "from": {"id": admin_uid, "is_bot": False, "first_name": "Admin"},
+                        "text": "/admin",
+                        "entities": [{"offset": 0, "length": 6, "type": "bot_command"}],
+                    },
+                }, app.bot))
+                sent_adm = [d for ep, d in api_calls if ep == "sendMessage"]
+                assert len(sent_adm) == 1
+                assert "Pannello di Controllo Amministratore" in sent_adm[0]["text"]
+                assert "MODALITÀ MANUTENZIONE ATTIVA" in sent_adm[0]["text"]
+            finally:
+                await app.shutdown()
+
+        # 7. Admin panel callbacks: adm_maint, adm_maint:off (keeps waitlist), adm_maint:notify, adm_maint:on, adm_maint:off_notify, adm_maint:clear
+        ctx = MagicMock()
+        ctx.user_data = {}
+        ctx.bot = MagicMock()
+        ctx.bot.send_message = AsyncMock()
+        admin_usr = MagicMock(id=admin_uid, username="admin", first_name="Admin")
+
+        cb_upd = MagicMock(spec=Update)
+        query = MagicMock(spec=CallbackQuery)
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+        cb_upd.callback_query = query
+        cb_upd.effective_user = admin_usr
+
+        # Open maintenance view
+        query.data = "adm_maint"
+        await admin_callback(cb_upd, ctx)
+        assert "Gestione Modalità Manutenzione" in query.edit_message_text.call_args[0][0]
+        assert f"`1`" in query.edit_message_text.call_args[0][0]
+
+        # adm_maint:off restores normal mode while keeping waitlist intact
+        query.data = "adm_maint:off"
+        await admin_callback(cb_upd, ctx)
+        assert settings_repo.is_maintenance_mode() is False
+        assert settings_repo.count_maintenance_waitlist_users() == 1
+
+        # adm_maint:notify sends "di nuovo online" and clears waitlist
+        ctx.bot.send_message.reset_mock()
+        query.data = "adm_maint:notify"
+        await admin_callback(cb_upd, ctx)
+        ctx.bot.send_message.assert_awaited_once()
+        assert str(ctx.bot.send_message.call_args[1]["chat_id"]) == str(normal_uid)
+        assert "di nuovo online" in ctx.bot.send_message.call_args[1]["text"]
+        assert settings_repo.count_maintenance_waitlist_users() == 0
+
+        # adm_maint:on + waiting user + adm_maint:off_notify restores + notifies in one tap
+        query.data = "adm_maint:on"
+        await admin_callback(cb_upd, ctx)
+        assert settings_repo.is_maintenance_mode() is True
+        settings_repo.add_maintenance_waitlist_user(normal_uid)
+        ctx.bot.send_message.reset_mock()
+        query.data = "adm_maint:off_notify"
+        await admin_callback(cb_upd, ctx)
+        assert settings_repo.is_maintenance_mode() is False
+        ctx.bot.send_message.assert_awaited_once()
+        assert "di nuovo online" in ctx.bot.send_message.call_args[1]["text"]
+        assert settings_repo.count_maintenance_waitlist_users() == 0
+
+        # adm_maint:clear clears waitlist without sending messages
+        settings_repo.add_maintenance_waitlist_user(normal_uid)
+        ctx.bot.send_message.reset_mock()
+        query.data = "adm_maint:clear"
+        await admin_callback(cb_upd, ctx)
+        ctx.bot.send_message.assert_not_called()
+        assert settings_repo.count_maintenance_waitlist_users() == 0
+
+        # /manutenzione command works for admin & rejects non-admin
+        non_adm_upd = MagicMock(spec=Update)
+        non_adm_upd.effective_user = MagicMock(id=normal_uid)
+        non_adm_msg = MagicMock()
+        non_adm_msg.reply_text = AsyncMock()
+        non_adm_upd.effective_message = non_adm_msg
+        ctx.args = []
+        await maintenance_command(non_adm_upd, ctx)
+        non_adm_msg.reply_text.assert_awaited_once_with("⛔ Comando riservato agli amministratori.")
+
+        adm_upd = MagicMock(spec=Update)
+        adm_upd.effective_user = admin_usr
+        adm_msg = MagicMock()
+        adm_msg.reply_text = AsyncMock()
+        adm_upd.effective_message = adm_msg
+        ctx.args = ["on"]
+        await maintenance_command(adm_upd, ctx)
+        assert settings_repo.is_maintenance_mode() is True
+        ctx.args = ["off"]
+        await maintenance_command(adm_upd, ctx)
+        assert settings_repo.is_maintenance_mode() is False
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.ADMIN_USER_IDS_RAW = orig_admins
+        settings_repo.delete("maintenance_mode")
+        settings_repo.clear_maintenance_waitlist()
+        repo.delete_user(normal_uid)
+        repo.delete_user(banned_uid)
+        repo.delete_user(admin_uid)
+
+
+@pytest.mark.anyio
+async def test_phase2_bot_security_hardening(monkeypatch):
+    """Verify /viaggio never uses Gemini LLM, >600 char AI messages don't consume rate limit, payment cross-user rejection, and Gemini API key in header only."""
+    import requests
+    from circumorari_bot.bot.handlers.timetable import viaggio_command
+    from circumorari_bot.bot.handlers.ai_chat import ai_message_handler
+    from circumorari_bot.bot.handlers.payments import pre_checkout_handler, successful_payment_handler
+    from circumorari_bot.core.rate_limiter import ai_rate_limiter
+    from circumorari_bot.services.ai_service import ai_service
+    from circumorari_bot.config import settings
+
+    # 1. /viaggio calls answer_query(..., use_llm=False) and NEVER calls Gemini even if GEMINI_API_KEY is set
+    orig_gem = settings.GEMINI_API_KEY
+    captured_posts = []
+
+    def fail_if_gemini_called(*args, **kwargs):
+        captured_posts.append((args, kwargs))
+        raise AssertionError("Gemini HTTP API must NOT be called from /viaggio!")
+
+    try:
+        settings.GEMINI_API_KEY = "AIzaFakeKeyForSecurityTest"
+        monkeypatch.setattr(requests, "post", fail_if_gemini_called)
+
+        upd_v = MagicMock(spec=Update)
+        msg_v = MagicMock()
+        msg_v.reply_text = AsyncMock()
+        upd_v.effective_message = msg_v
+        ctx_v = MagicMock()
+        ctx_v.args = ["Catania", "-", "Bronte", "14:00"]
+
+        await viaggio_command(upd_v, ctx_v)
+        msg_v.reply_text.assert_awaited_once()
+        assert captured_posts == []
+
+        # 2. Gemini requests pass API key via x-goog-api-key header and NEVER in URL query string
+        gemini_calls = []
+
+        def mock_gemini_post(url, headers=None, json=None, timeout=None, **kwargs):
+            gemini_calls.append({"url": url, "headers": headers or {}, "json": json})
+            resp = MagicMock()
+            resp.status_code = 200
+            if "temperature" in (json or {}).get("generationConfig", {}) and json["generationConfig"].get("responseMimeType") == "application/json":
+                resp.json.return_value = {
+                    "candidates": [{"content": {"parts": [{"text": '{"origin": "Paterno", "destination": "Randazzo", "time": "08:30", "is_arrival_time": false, "transport": "TRENO", "line_to_trace": null, "place_for_nearest_stop": null, "is_general_info": false}'}]}}]
+                }
+            else:
+                resp.json.return_value = {
+                    "candidates": [{"content": {"parts": [{"text": "Ecco i treni da Paternò a Randazzo."}]}}]
+                }
+            return resp
+
+        monkeypatch.setattr(requests, "post", mock_gemini_post)
+        res_llm = ai_service.answer_query("Da Paterno a Randazzo alle 08:30", use_llm=True)
+        assert "Randazzo" in res_llm.answer
+        assert len(gemini_calls) == 2
+        for call in gemini_calls:
+            assert "?key=" not in call["url"]
+            assert "AIzaFakeKeyForSecurityTest" not in call["url"]
+            assert call["headers"].get("x-goog-api-key") == "AIzaFakeKeyForSecurityTest"
+    finally:
+        settings.GEMINI_API_KEY = orig_gem
+
+    # 3. Overly long AI text (> 600 chars) rejected before consuming rate limit or calling AI
+    repo = UsersRepository()
+    uid_len = 960000101
+    ai_rate_limiter.reset(uid_len)
+    repo.delete_user(uid_len)
+    repo.set_ai_allowed(uid_len, True)
+    try:
+        upd_long = MagicMock(spec=Update)
+        upd_long.channel_post = None
+        upd_long.effective_chat = MagicMock(type="private", id=uid_len)
+        upd_long.effective_user = MagicMock(id=uid_len, username="long_user", first_name="Long")
+        msg_long = MagicMock()
+        msg_long.text = "A" * 601
+        msg_long.reply_text = AsyncMock()
+        upd_long.effective_message = msg_long
+        ctx_long = MagicMock()
+        ctx_long.user_data = {}
+        ctx_long.bot.send_chat_action = AsyncMock()
+
+        await ai_message_handler(upd_long, ctx_long)
+        msg_long.reply_text.assert_awaited_once()
+        assert "troppo lunga" in msg_long.reply_text.call_args[0][0]
+        ctx_long.bot.send_chat_action.assert_not_called()
+        # Verify rate-limit slot was NOT consumed
+        allowed, _, used = ai_rate_limiter.check_and_record(uid_len, max_requests=3, window_seconds=600)
+        assert allowed is True and used == 1
+    finally:
+        repo.delete_user(uid_len)
+        ai_rate_limiter.reset(uid_len)
+
+    # 4. Cross-user PreCheckoutQuery & SuccessfulPayment payload mismatch rejected
+    uid_buyer = 960000201
+    uid_other = 960000202
+    repo.delete_user(uid_buyer)
+    repo.delete_user(uid_other)
+    try:
+        upd_pcq = MagicMock(spec=Update)
+        q_pcq = MagicMock()
+        q_pcq.from_user = MagicMock(id=uid_buyer)
+        q_pcq.currency = "XTR"
+        q_pcq.invoice_payload = f"ai_sub:{uid_other}:1700000000"
+        q_pcq.answer = AsyncMock()
+        upd_pcq.pre_checkout_query = q_pcq
+        await pre_checkout_handler(upd_pcq, MagicMock())
+        q_pcq.answer.assert_awaited_once_with(ok=False, error_message="Ordine non valido per questo utente.")
+
+        upd_sp = MagicMock(spec=Update)
+        upd_sp.effective_chat = MagicMock(id=uid_buyer)
+        msg_sp = MagicMock()
+        msg_sp.successful_payment = MagicMock(
+            invoice_payload=f"ai_sub:{uid_other}:1700000000",
+            currency="XTR",
+        )
+        msg_sp.reply_text = AsyncMock()
+        upd_sp.effective_message = msg_sp
+        await successful_payment_handler(upd_sp, MagicMock())
+        assert "non riconosciuto" in msg_sp.reply_text.call_args[0][0]
+        assert repo.is_ai_allowed(uid_buyer) is False
+    finally:
+        repo.delete_user(uid_buyer)
+        repo.delete_user(uid_other)
 
 
 

@@ -1,9 +1,12 @@
 """FastAPI REST router for webhooks, Vercel cron, REST transit endpoints and Web UI."""
 
 import asyncio
+import hmac
+import html
 import logging
+import re
 from pathlib import Path
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Iterable
 from fastapi import APIRouter, Request, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from telegram import Update
@@ -35,6 +38,14 @@ ALLOWED_TELEGRAM_UPDATES: List[str] = [
     "pre_checkout_query",
     "my_chat_member",
 ]
+
+
+def _is_valid_secret(provided: Optional[str], expected_secrets: Iterable[Optional[str]]) -> bool:
+    """Fail-closed constant-time secret verification against non-empty configured secrets."""
+    valid = [s for s in expected_secrets if isinstance(s, str) and s]
+    if not valid or not isinstance(provided, str) or not provided:
+        return False
+    return any(hmac.compare_digest(provided, secret) for secret in valid)
 
 
 def get_telegram_app():
@@ -148,8 +159,8 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: Optional[str] = Header(None)
 ):
     """Handle incoming Telegram updates forwarded via Webhook."""
-    if settings.WEBHOOK_SECRET and x_telegram_bot_api_secret_token != settings.WEBHOOK_SECRET:
-        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+    if not _is_valid_secret(x_telegram_bot_api_secret_token, [settings.WEBHOOK_SECRET]):
+        raise HTTPException(status_code=403, detail="Invalid or unconfigured webhook secret")
 
     try:
         data = await request.json()
@@ -175,10 +186,13 @@ async def cron_news_checker(
     secret: Optional[str] = Query(None)
 ):
     """Scheduled task invoked by Vercel Cron to check news and broadcast updates."""
-    if settings.CRON_SECRET:
-        token = (authorization or "").replace("Bearer ", "") or secret
-        if token != settings.CRON_SECRET:
-            raise HTTPException(status_code=403, detail="Invalid cron authorization secret")
+    token = (
+        authorization[7:].strip()
+        if authorization and authorization.startswith("Bearer ")
+        else authorization
+    ) or secret
+    if not _is_valid_secret(token, [settings.CRON_SECRET]):
+        raise HTTPException(status_code=403, detail="Invalid or unconfigured cron authorization secret")
 
     app = await _prepare_telegram_app()
     try:
@@ -203,10 +217,13 @@ async def cron_cleanup_task(
     secret: Optional[str] = Query(None)
 ):
     """Scheduled maintenance task: deactivate expired AI users and prune inactive records (GDPR)."""
-    if settings.CRON_SECRET:
-        token = (authorization or "").replace("Bearer ", "") or secret
-        if token != settings.CRON_SECRET:
-            raise HTTPException(status_code=403, detail="Invalid cron authorization secret")
+    token = (
+        authorization[7:].strip()
+        if authorization and authorization.startswith("Bearer ")
+        else authorization
+    ) or secret
+    if not _is_valid_secret(token, [settings.CRON_SECRET]):
+        raise HTTPException(status_code=403, detail="Invalid or unconfigured cron authorization secret")
 
     repo = UsersRepository()
     deactivated = repo.deactivate_expired_users()
@@ -231,10 +248,10 @@ async def list_cities(type: Optional[str] = None):
 
 @router.get("/api/stops")
 async def list_stops(
-    query: Optional[str] = None,
+    query: Optional[str] = Query(None, max_length=150),
     type: Optional[str] = None,
-    city: Optional[str] = None,
-    limit: int = 50
+    city: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(50, ge=1, le=1000)
 ):
     """Search or list transit stops (optionally filtered by transport mode and city)."""
     ttype = TransportType.from_str(type) if type else None
@@ -262,12 +279,12 @@ async def list_stops(
 
 @router.get("/api/timetable")
 async def get_timetable(
-    origin: str,
-    destination: str,
+    origin: str = Query(..., max_length=150),
+    destination: str = Query(..., max_length=150),
     time: str = "08:00",
     transport: Optional[str] = "QUALSIASI",
     filter: Optional[str] = "near_partenza2",
-    limit: int = 10
+    limit: int = Query(10, ge=1, le=50)
 ):
     """Query transit timetable between two stops, cities, or similar station names."""
     ttype = TransportType.from_str(transport or "")
@@ -335,7 +352,7 @@ async def get_timetable(
 
 
 @router.get("/api/news")
-async def get_news(limit: int = 10) -> List[NewsItem]:
+async def get_news(limit: int = Query(10, ge=1, le=30)) -> List[NewsItem]:
     """Retrieve latest Circumetnea news."""
     return news_service.fetch_news(limit=limit)
 
@@ -356,17 +373,24 @@ async def ai_trip_advisor(req: AIQueryRequest) -> AIQueryResponse:
 
 
 @router.get("/api/health")
-async def health_check(sync_webhook: bool = Query(False)):
-    """Health check endpoint."""
-    p_status = get_persistence_status()
+async def health_check(
+    sync_webhook: bool = Query(False),
+    secret: Optional[str] = Query(None),
+    x_telegram_bot_api_secret_token: Optional[str] = Header(None),
+):
+    """Health check endpoint (minimal public status; privileged metadata requires secret auth)."""
     result: Dict[str, Any] = {
         "status": "healthy",
         "service": "circumorari-bot",
         "version": "2.0.0",
-        "storage_backend": p_status["backend"],
-        "permanent_storage": p_status["permanent"],
     }
     if sync_webhook:
+        auth_secret = x_telegram_bot_api_secret_token or secret
+        if not _is_valid_secret(auth_secret, [settings.WEBHOOK_SECRET, settings.CRON_SECRET]):
+            raise HTTPException(status_code=403, detail="Invalid or unconfigured authorization secret")
+        p_status = get_persistence_status()
+        result["storage_backend"] = p_status["backend"]
+        result["permanent_storage"] = p_status["permanent"]
         app = await _prepare_telegram_app()
         try:
             result["webhook"] = await _ensure_webhook_allowed_updates(app)
@@ -384,9 +408,8 @@ async def sync_telegram_commands(
 ):
     """Endpoint to trigger re-flushing official slash commands with Telegram Bot API."""
     auth_secret = x_telegram_bot_api_secret_token or secret
-    valid_secrets = {s for s in (settings.WEBHOOK_SECRET, settings.CRON_SECRET) if s}
-    if valid_secrets and auth_secret not in valid_secrets:
-        raise HTTPException(status_code=403, detail="Invalid authorization secret")
+    if not _is_valid_secret(auth_secret, [settings.WEBHOOK_SECRET, settings.CRON_SECRET]):
+        raise HTTPException(status_code=403, detail="Invalid or unconfigured authorization secret")
 
     app = await _prepare_telegram_app()
     try:
@@ -477,12 +500,20 @@ async def service_worker():
 @router.get("/static/icons/{filename}", include_in_schema=False)
 async def serve_icon(filename: str):
     """Serve PWA application vector and raster icons."""
-    file_path = ICONS_DIR / filename
-    if not file_path.exists():
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
         raise HTTPException(status_code=404, detail="Icon not found")
-    if filename.endswith(".svg"):
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".svg", ".png", ".ico"}:
+        raise HTTPException(status_code=404, detail="Icon not found")
+
+    icons_root = ICONS_DIR.resolve()
+    file_path = (icons_root / filename).resolve()
+    if file_path.parent != icons_root or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Icon not found")
+
+    if suffix == ".svg":
         media_type = "image/svg+xml"
-    elif filename.endswith(".ico"):
+    elif suffix == ".ico":
         media_type = "image/x-icon"
     else:
         media_type = "image/png"
@@ -526,8 +557,8 @@ async def home_dashboard():
     docs = documents_service.get_documents()
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     content = (
-        template.replace("__METRO_URL__", docs.metro_url)
-        .replace("__TRAIN_URL__", docs.train_url)
-        .replace("__BUS_URL__", docs.bus_url)
+        template.replace("__METRO_URL__", html.escape(docs.metro_url, quote=True))
+        .replace("__TRAIN_URL__", html.escape(docs.train_url, quote=True))
+        .replace("__BUS_URL__", html.escape(docs.bus_url, quote=True))
     )
     return HTMLResponse(content=content)
