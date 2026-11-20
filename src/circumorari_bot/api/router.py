@@ -508,7 +508,11 @@ async def serve_icon(filename: str):
 
     icons_root = ICONS_DIR.resolve()
     file_path = (icons_root / filename).resolve()
-    if file_path.parent != icons_root or not file_path.is_file():
+    try:
+        file_path.relative_to(icons_root)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Icon not found")
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Icon not found")
 
     if suffix == ".svg":
