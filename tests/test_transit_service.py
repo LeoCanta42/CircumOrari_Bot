@@ -146,6 +146,19 @@ def test_city_filtering_and_disambiguated_stop_names():
     assert res_motta.matched_stops[0].city == "Motta Sant'Anastasia"
     assert set(res_giarre.stop_ids).isdisjoint(set(res_motta.stop_ids))
 
+    # Parenthesis format edge cases
+    res_empty_paren = transit_service.resolve_location("Corso Sicilia ()")
+    assert res_empty_paren.match_kind != "exact" or len(res_empty_paren.matched_stops) > 1
+
+    # Malicious long whitespace before paren (ReDoS test)
+    import time
+    t0 = time.perf_counter()
+    res_redos = transit_service.resolve_location("Corso Sicilia" + " " * 10000 + "(Giarre)")
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 0.1
+    assert res_redos.match_kind == "exact"
+    assert res_redos.matched_stops[0].city == "Giarre"
+
 
 def test_resolve_gtfs_url_success(monkeypatch):
     """Verify dynamic scraping successfully discovers GTFS download link."""

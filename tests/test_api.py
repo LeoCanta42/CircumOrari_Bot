@@ -597,6 +597,8 @@ def test_api_security_hardening():
         assert client.get("/static/icons/..%2F..%2Fmain.py").status_code == 404
         assert client.get("/static/icons/icon.txt").status_code == 404
         assert client.get("/static/icons/nonexistent.png").status_code == 404
+        assert client.get("/static/icons/favicon.ico").status_code == 200
+        assert client.get("/static/icons/favicon.ico").headers["content-type"] == "image/x-icon"
 
         # 3. Security headers present on /
         home = client.get("/")

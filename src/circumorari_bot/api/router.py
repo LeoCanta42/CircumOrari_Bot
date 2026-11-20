@@ -432,6 +432,13 @@ async def sync_telegram_commands(
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ICONS_DIR = STATIC_DIR / "icons"
 SW_PATH = STATIC_DIR / "sw.js"
+ALLOWED_ICONS: Dict[str, tuple[Path, str]] = {
+    "icon.svg": (ICONS_DIR / "icon.svg", "image/svg+xml"),
+    "icon-192.png": (ICONS_DIR / "icon-192.png", "image/png"),
+    "icon-512.png": (ICONS_DIR / "icon-512.png", "image/png"),
+    "maskable-512.png": (ICONS_DIR / "maskable-512.png", "image/png"),
+    "favicon.ico": (ICONS_DIR / "favicon.ico", "image/x-icon"),
+}
 
 
 @router.get("/manifest.webmanifest", include_in_schema=False)
@@ -500,27 +507,18 @@ async def service_worker():
 @router.get("/static/icons/{filename}", include_in_schema=False)
 async def serve_icon(filename: str):
     """Serve PWA application vector and raster icons."""
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
-        raise HTTPException(status_code=404, detail="Icon not found")
-    suffix = Path(filename).suffix.lower()
-    if suffix not in {".svg", ".png", ".ico"}:
+    icon_info = ALLOWED_ICONS.get(filename)
+    if not icon_info:
         raise HTTPException(status_code=404, detail="Icon not found")
 
-    icons_root = ICONS_DIR.resolve()
-    file_path = (icons_root / filename).resolve()
-    if file_path.parent != icons_root or not file_path.is_file():
+    file_path, media_type = icon_info
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Icon not found")
 
-    if suffix == ".svg":
-        media_type = "image/svg+xml"
-    elif suffix == ".ico":
-        media_type = "image/x-icon"
-    else:
-        media_type = "image/png"
     return Response(
         content=file_path.read_bytes(),
         media_type=media_type,
-        headers={"Cache-Control": "public, max-age=604800"}
+        headers={"Cache-Control": "public, max-age=604800"},
     )
 
 

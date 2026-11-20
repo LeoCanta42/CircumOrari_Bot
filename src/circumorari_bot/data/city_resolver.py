@@ -302,8 +302,12 @@ def geocode_place_in_etna_area(
         if key_candidate in ETNA_LANDMARKS_GAZETTEER:
             return ETNA_LANDMARKS_GAZETTEER[key_candidate]
         # Check without trailing "DI CATANIA" / "CATANIA" if landmark is unambiguous
-        without_ct = re.sub(r"\s+(?:DI\s+)?CATANIA$", "", key_candidate).strip()
-        if without_ct in ETNA_LANDMARKS_GAZETTEER:
+        without_ct = key_candidate
+        if without_ct.endswith(" DI CATANIA"):
+            without_ct = without_ct[:-11].rstrip()
+        elif without_ct.endswith(" CATANIA"):
+            without_ct = without_ct[:-8].rstrip()
+        if without_ct and without_ct in ETNA_LANDMARKS_GAZETTEER:
             return ETNA_LANDMARKS_GAZETTEER[without_ct]
 
     if not allow_network:

@@ -456,27 +456,29 @@ class TransitService:
 
             # Stage 1A-bis: Explicit "Stop Name (City)" format (e.g. "Corso Sicilia (Giarre)")
             if has_city:
-                paren_match = re.match(r"^(.+?)\s*\(([^()]+)\)\s*$", name_or_query.strip())
-                if paren_match:
-                    p_stop = normalize_stop_name(paren_match.group(1))
-                    p_city = normalize_stop_name(paren_match.group(2))
-                    if p_stop and p_city:
-                        p_rows = cur.execute(
-                            f"SELECT stop_id, stop_name, normalized_name, {city_col}, lat, lon, has_bus, has_train, has_metro "
-                            "FROM stops WHERE normalized_name = ? AND normalized_city = ?"
-                            + self._transport_clause(transport_type)
-                            + " ORDER BY stop_name",
-                            (p_stop, p_city),
-                        ).fetchall()
-                        if p_rows:
-                            stops = [self._row_to_stop(r) for r in p_rows]
-                            return LocationResolution(
-                                raw_query=name_or_query,
-                                stop_ids=[str(r["stop_id"]) for r in p_rows],
-                                matched_stops=stops[:6],
-                                match_kind="exact",
-                                resolved_label=stops[0].display_name,
-                            )
+                query_stripped = name_or_query.strip()
+                if query_stripped.endswith(")") and "(" in query_stripped:
+                    l_part, _, r_part = query_stripped[:-1].rpartition("(")
+                    if l_part and r_part and "(" not in r_part and ")" not in r_part:
+                        p_stop = normalize_stop_name(l_part)
+                        p_city = normalize_stop_name(r_part)
+                        if p_stop and p_city:
+                            p_rows = cur.execute(
+                                f"SELECT stop_id, stop_name, normalized_name, {city_col}, lat, lon, has_bus, has_train, has_metro "
+                                "FROM stops WHERE normalized_name = ? AND normalized_city = ?"
+                                + self._transport_clause(transport_type)
+                                + " ORDER BY stop_name",
+                                (p_stop, p_city),
+                            ).fetchall()
+                            if p_rows:
+                                stops = [self._row_to_stop(r) for r in p_rows]
+                                return LocationResolution(
+                                    raw_query=name_or_query,
+                                    stop_ids=[str(r["stop_id"]) for r in p_rows],
+                                    matched_stops=stops[:6],
+                                    match_kind="exact",
+                                    resolved_label=stops[0].display_name,
+                                )
 
             # Stage 1A: Check if query is an exact municipality name (e.g. "Catania", "Paternò", "Randazzo")
             is_city_query = False

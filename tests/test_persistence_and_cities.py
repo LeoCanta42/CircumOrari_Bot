@@ -306,3 +306,36 @@ def test_all_production_stops_have_city_enriched():
     assert total >= 580
     assert missing == 0
     assert distinct_cities >= 20
+
+
+def test_geocode_place_in_etna_area_catania_suffix_and_redos():
+    """Verify landmark stripping of 'DI CATANIA' and 'CATANIA' suffixes works without ReDoS."""
+    import time
+    from circumorari_bot.data.city_resolver import geocode_place_in_etna_area
+
+    # Landmark with DI CATANIA suffix
+    res_di = geocode_place_in_etna_area("Policlinico di Catania", allow_network=False)
+    assert res_di is not None
+    assert "Policlinico" in res_di[2]
+
+    # Landmark with CATANIA suffix
+    res_ct = geocode_place_in_etna_area("Policlinico Catania", allow_network=False)
+    assert res_ct is not None
+    assert "Policlinico" in res_ct[2]
+
+    # Landmark without suffix
+    res_plain = geocode_place_in_etna_area("Policlinico", allow_network=False)
+    assert res_plain is not None
+    assert res_plain == res_di
+
+    # Non-existent landmark
+    assert geocode_place_in_etna_area("Policlinico di Palermo", allow_network=False) is None
+
+    # ReDoS payload with 10,000 spaces should return in <100ms without catastrophic backtracking
+    redos_query = "Policlinico" + " " * 10000 + "DI CATANIA"
+    t0 = time.perf_counter()
+    res_redos = geocode_place_in_etna_area(redos_query, allow_network=False)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 0.1
+    assert res_redos is not None
+    assert res_redos == res_di
